@@ -108,7 +108,8 @@ impl PulseConn {
         }
         self.mainloop.unlock();
 
-        Ok(result.lock().unwrap().take().unwrap_or_default())
+        let items = result.lock().unwrap().take().unwrap_or_default();
+        Ok(items)
     }
 
     fn list_sources(
@@ -138,7 +139,8 @@ impl PulseConn {
         }
         self.mainloop.unlock();
 
-        Ok(result.lock().unwrap().take().unwrap_or_default())
+        let items = result.lock().unwrap().take().unwrap_or_default();
+        Ok(items)
     }
 
     fn list_sink_inputs(
@@ -168,7 +170,8 @@ impl PulseConn {
         }
         self.mainloop.unlock();
 
-        Ok(result.lock().unwrap().take().unwrap_or_default())
+        let items = result.lock().unwrap().take().unwrap_or_default();
+        Ok(items)
     }
 
     fn set_sink_volume_by_name(&mut self, name: &str, cvols: &ChannelVolumes) -> anyhow::Result<()> {
@@ -236,11 +239,12 @@ impl PulseConn {
         }
         self.mainloop.unlock();
 
-        result
+        let info = result
             .lock()
             .unwrap()
             .take()
-            .ok_or_else(|| anyhow::anyhow!("Failed to get server info"))
+            .ok_or_else(|| anyhow::anyhow!("Failed to get server info"))?;
+        Ok(info)
     }
 }
 
