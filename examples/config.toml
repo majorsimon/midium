@@ -1,0 +1,15 @@
+[general]
+autostart = true
+log_level = "info"
+
+[midi]
+poll_interval_secs = 2
+auto_connect = true
+
+[audio]
+refresh_interval_secs = 5
+smoothing = 0.0
+
+[plugins]
+enabled = []
+plugin_dirs = []

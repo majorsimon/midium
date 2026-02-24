@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:github.com)",
+      "Bash(source \"$HOME/.cargo/env\" && cargo check 2>&1)",
+      "Bash(source \"$HOME/.cargo/env\" && cargo test 2>&1)",
+      "Bash(source /Users/simon.major/.cargo/env && cargo check 2>&1)"
+    ]
+  }
+}

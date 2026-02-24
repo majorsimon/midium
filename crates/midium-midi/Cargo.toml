@@ -1,0 +1,13 @@
+[package]
+name = "midium-midi"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+midium-core = { workspace = true }
+midir = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }

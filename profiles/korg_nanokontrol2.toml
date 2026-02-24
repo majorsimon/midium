@@ -1,0 +1,116 @@
+name = "Korg nanoKONTROL2"
+match_patterns = ["nanokontrol2", "nanoKONTROL2", "nano kontrol"]
+
+[[controls]]
+label = "Slider 1"
+control_type = "slider"
+channel = 0
+number = 0
+
+[[controls]]
+label = "Slider 2"
+control_type = "slider"
+channel = 0
+number = 1
+
+[[controls]]
+label = "Slider 3"
+control_type = "slider"
+channel = 0
+number = 2
+
+[[controls]]
+label = "Slider 4"
+control_type = "slider"
+channel = 0
+number = 3
+
+[[controls]]
+label = "Slider 5"
+control_type = "slider"
+channel = 0
+number = 4
+
+[[controls]]
+label = "Slider 6"
+control_type = "slider"
+channel = 0
+number = 5
+
+[[controls]]
+label = "Slider 7"
+control_type = "slider"
+channel = 0
+number = 6
+
+[[controls]]
+label = "Slider 8"
+control_type = "slider"
+channel = 0
+number = 7
+
+[[controls]]
+label = "Knob 1"
+control_type = "knob"
+channel = 0
+number = 16
+
+[[controls]]
+label = "Knob 2"
+control_type = "knob"
+channel = 0
+number = 17
+
+[[controls]]
+label = "Knob 3"
+control_type = "knob"
+channel = 0
+number = 18
+
+[[controls]]
+label = "Knob 4"
+control_type = "knob"
+channel = 0
+number = 19
+
+[[controls]]
+label = "Knob 5"
+control_type = "knob"
+channel = 0
+number = 20
+
+[[controls]]
+label = "Knob 6"
+control_type = "knob"
+channel = 0
+number = 21
+
+[[controls]]
+label = "Knob 7"
+control_type = "knob"
+channel = 0
+number = 22
+
+[[controls]]
+label = "Knob 8"
+control_type = "knob"
+channel = 0
+number = 23
+
+[[controls]]
+label = "Solo 1"
+control_type = "button"
+channel = 0
+number = 32
+
+[[controls]]
+label = "Mute 1"
+control_type = "button"
+channel = 0
+number = 48
+
+[[controls]]
+label = "Record 1"
+control_type = "button"
+channel = 0
+number = 64

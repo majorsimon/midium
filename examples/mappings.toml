@@ -1,0 +1,29 @@
+# Example: Map nanoKONTROL2 Slider 1 (CC 0, channel 0) to system master volume
+[[mappings]]
+action = { SetVolume = { target = "SystemMaster" } }
+transform = "Linear"
+
+[mappings.control]
+device = "nanoKONTROL2"
+channel = 0
+control_type = { CC = 0 }
+
+# Example: Map Slider 2 (CC 1) to system volume with log curve
+[[mappings]]
+action = { SetVolume = { target = "SystemMaster" } }
+transform = "Logarithmic"
+
+[mappings.control]
+device = "nanoKONTROL2"
+channel = 0
+control_type = { CC = 1 }
+
+# Example: Map Mute button (Note 48) to toggle mute
+[[mappings]]
+action = { ToggleMute = { target = "SystemMaster" } }
+transform = "Toggle"
+
+[mappings.control]
+device = "nanoKONTROL2"
+channel = 0
+control_type = { Note = 48 }

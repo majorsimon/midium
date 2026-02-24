@@ -1,0 +1,115 @@
+# nanoKONTROL2 mappings for testing
+#
+# The device name must exactly match what your OS reports.
+# Run `RUST_LOG=info cargo run --bin midium` to see the port name on startup,
+# then replace "nanoKONTROL2 MIDI 1" below with what you see.
+#
+# nanoKONTROL2 default Scene 1 MIDI map:
+#   Sliders  1-8 : CC  0- 7  channel 0
+#   Knobs    1-8 : CC 16-23  channel 0
+#   Solo     1-8 : CC 32-39  channel 0  (latching button mode)
+#   Mute     1-8 : CC 48-55  channel 0  (latching button mode)
+#   Record   1-8 : CC 64-71  channel 0  (latching button mode)
+#   Transport:
+#     REW         : CC 43
+#     FF          : CC 44
+#     Stop        : CC 42
+#     Play        : CC 41
+#     Rec         : CC 45
+#     Cycle       : CC 46
+#     Prev Track  : CC 58
+#     Next Track  : CC 59
+
+# ---------------------------------------------------------------------------
+# Sliders → System master volume
+# Use Logarithmic for natural-feeling volume control
+# ---------------------------------------------------------------------------
+
+[[mappings]]
+transform = "Logarithmic"
+
+[mappings.control]
+device = "nanoKONTROL2 MIDI 1"
+channel = 0
+[mappings.control.control_type]
+CC = 0
+
+[mappings.action.SetVolume]
+target = "SystemMaster"
+
+# Slider 2 — also controls master (remove or reassign once per-app is wired)
+[[mappings]]
+transform = "Logarithmic"
+
+[mappings.control]
+device = "nanoKONTROL2 MIDI 1"
+channel = 0
+[mappings.control.control_type]
+CC = 1
+
+[mappings.action.SetVolume]
+target = "SystemMaster"
+
+# ---------------------------------------------------------------------------
+# Mute button 1 (CC 48) → toggle system mute
+# ---------------------------------------------------------------------------
+
+[[mappings]]
+transform = "Toggle"
+
+[mappings.control]
+device = "nanoKONTROL2 MIDI 1"
+channel = 0
+[mappings.control.control_type]
+CC = 48
+
+[mappings.action.ToggleMute]
+target = "SystemMaster"
+
+# ---------------------------------------------------------------------------
+# Transport: Play (CC 41) → MediaPlayPause
+# ---------------------------------------------------------------------------
+
+[[mappings]]
+transform = "Momentary"
+
+[mappings.control]
+device = "nanoKONTROL2 MIDI 1"
+channel = 0
+[mappings.control.control_type]
+CC = 41
+
+[mappings.action]
+MediaPlayPause = {}
+
+# ---------------------------------------------------------------------------
+# Transport: REW (CC 43) → MediaPrev
+# ---------------------------------------------------------------------------
+
+[[mappings]]
+transform = "Momentary"
+
+[mappings.control]
+device = "nanoKONTROL2 MIDI 1"
+channel = 0
+[mappings.control.control_type]
+CC = 43
+
+[mappings.action]
+MediaPrev = {}
+
+# ---------------------------------------------------------------------------
+# Transport: FF (CC 44) → MediaNext
+# ---------------------------------------------------------------------------
+
+[[mappings]]
+transform = "Momentary"
+
+[mappings.control]
+device = "nanoKONTROL2 MIDI 1"
+channel = 0
+[mappings.control.control_type]
+CC = 44
+
+[mappings.action]
+MediaNext = {}

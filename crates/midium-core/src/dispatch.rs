@@ -1,0 +1,66 @@
+use tracing::{debug, warn};
+use crate::types::{Action, AudioTarget};
+
+/// Trait implemented by the audio backend so the dispatcher can call into it.
+pub trait VolumeControl: Send + Sync {
+    fn set_volume(&self, target: &AudioTarget, volume: f64) -> anyhow::Result<()>;
+    fn set_mute(&self, target: &AudioTarget, muted: bool) -> anyhow::Result<()>;
+    fn is_muted(&self, target: &AudioTarget) -> anyhow::Result<bool>;
+    fn set_default_output(&self, device_id: &str) -> anyhow::Result<()>;
+    fn set_default_input(&self, device_id: &str) -> anyhow::Result<()>;
+}
+
+/// Routes resolved actions to the appropriate subsystem (audio, shortcuts, plugins).
+pub struct ActionDispatcher {
+    audio: Box<dyn VolumeControl>,
+}
+
+impl ActionDispatcher {
+    pub fn new(audio: Box<dyn VolumeControl>) -> Self {
+        Self { audio }
+    }
+
+    /// Execute an action with the given transformed value (0.0–1.0).
+    pub fn dispatch(&self, action: &Action, value: f64) {
+        match action {
+            Action::SetVolume { target } => {
+                debug!(?target, volume = value, "Setting volume");
+                if let Err(e) = self.audio.set_volume(target, value) {
+                    warn!("Failed to set volume: {e}");
+                }
+            }
+            Action::ToggleMute { target } => {
+                match self.audio.is_muted(target) {
+                    Ok(muted) => {
+                        debug!(?target, new_muted = !muted, "Toggling mute");
+                        if let Err(e) = self.audio.set_mute(target, !muted) {
+                            warn!("Failed to toggle mute: {e}");
+                        }
+                    }
+                    Err(e) => warn!("Failed to check mute state: {e}"),
+                }
+            }
+            Action::SetDefaultOutput { device_id } => {
+                debug!(device_id, "Switching default output");
+                if let Err(e) = self.audio.set_default_output(device_id) {
+                    warn!("Failed to set default output: {e}");
+                }
+            }
+            Action::SetDefaultInput { device_id } => {
+                debug!(device_id, "Switching default input");
+                if let Err(e) = self.audio.set_default_input(device_id) {
+                    warn!("Failed to set default input: {e}");
+                }
+            }
+            Action::ActionGroup { actions } => {
+                for a in actions {
+                    self.dispatch(a, value);
+                }
+            }
+            // Shortcuts, media keys, plugins — Phase 4/5
+            other => {
+                warn!(?other, "Action not yet implemented");
+            }
+        }
+    }
+}

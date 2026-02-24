@@ -1,0 +1,6 @@
+name = "Generic MIDI Controller"
+# Empty match_patterns — used as fallback
+match_patterns = []
+
+# Generic controllers vary widely, so we define no controls.
+# Users should use MIDI Learn to discover and map controls.

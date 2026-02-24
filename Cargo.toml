@@ -1,0 +1,44 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/midium-core",
+    "crates/midium-midi",
+    "crates/midium-audio",
+    "crates/midium-plugins",
+    "crates/midium-shortcuts",
+    "crates/midium-daemon",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/midium/midium"
+
+[workspace.dependencies]
+# Shared
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+
+# MIDI
+midir = "0.10"
+
+# Audio - macOS
+coreaudio-sys = "0.2"
+# Linux and Windows audio deps are kept in midium-audio/Cargo.toml as
+# target-specific deps so they don't resolve on other platforms.
+
+# Plugins
+mlua = { version = "0.10", features = ["lua54", "vendored", "serialize"] }
+
+# Internal crates
+midium-core = { path = "crates/midium-core" }
+midium-midi = { path = "crates/midium-midi" }
+midium-audio = { path = "crates/midium-audio" }
+midium-plugins = { path = "crates/midium-plugins" }
+midium-shortcuts = { path = "crates/midium-shortcuts" }

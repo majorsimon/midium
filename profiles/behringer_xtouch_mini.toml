@@ -1,0 +1,106 @@
+name = "Behringer X-Touch Mini"
+match_patterns = ["x-touch mini", "xtouch mini", "X-TOUCH MINI"]
+
+[[controls]]
+label = "Encoder 1"
+control_type = "encoder"
+channel = 0
+number = 1
+
+[[controls]]
+label = "Encoder 2"
+control_type = "encoder"
+channel = 0
+number = 2
+
+[[controls]]
+label = "Encoder 3"
+control_type = "encoder"
+channel = 0
+number = 3
+
+[[controls]]
+label = "Encoder 4"
+control_type = "encoder"
+channel = 0
+number = 4
+
+[[controls]]
+label = "Encoder 5"
+control_type = "encoder"
+channel = 0
+number = 5
+
+[[controls]]
+label = "Encoder 6"
+control_type = "encoder"
+channel = 0
+number = 6
+
+[[controls]]
+label = "Encoder 7"
+control_type = "encoder"
+channel = 0
+number = 7
+
+[[controls]]
+label = "Encoder 8"
+control_type = "encoder"
+channel = 0
+number = 8
+
+[[controls]]
+label = "Slider"
+control_type = "slider"
+channel = 0
+number = 9
+
+[[controls]]
+label = "Button A1"
+control_type = "button"
+channel = 0
+number = 8
+min_value = 0
+max_value = 127
+
+[[controls]]
+label = "Button A2"
+control_type = "button"
+channel = 0
+number = 9
+
+[[controls]]
+label = "Button A3"
+control_type = "button"
+channel = 0
+number = 10
+
+[[controls]]
+label = "Button A4"
+control_type = "button"
+channel = 0
+number = 11
+
+[[controls]]
+label = "Button A5"
+control_type = "button"
+channel = 0
+number = 12
+
+[[controls]]
+label = "Button A6"
+control_type = "button"
+channel = 0
+number = 13
+
+[[controls]]
+label = "Button A7"
+control_type = "button"
+channel = 0
+number = 14
+
+[[controls]]
+label = "Button A8"
+control_type = "button"
+channel = 0
+number = 15

@@ -1,0 +1,10 @@
+[package]
+name = "midium-shortcuts"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+midium-core = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
