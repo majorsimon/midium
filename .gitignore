@@ -3,3 +3,8 @@
 *.swp
 *.swo
 .DS_Store
+
+# Frontend
+app/node_modules/
+app/dist/
+app/.svelte-kit/

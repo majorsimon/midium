@@ -7,7 +7,9 @@ use midium_core::dispatch::VolumeControl;
 /// - macOS: CoreAudio
 /// - Linux: PulseAudio (PipeWire compatible)
 /// - Windows: WASAPI
-pub trait AudioBackend: VolumeControl {
+///
+/// Requires `Send + Sync` so it can be held in Tauri's managed state.
+pub trait AudioBackend: VolumeControl + Send + Sync {
     /// List all output (playback) devices.
     fn list_output_devices(&self) -> anyhow::Result<Vec<AudioDeviceInfo>>;
 

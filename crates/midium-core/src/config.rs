@@ -110,6 +110,12 @@ impl Default for PluginsConfig {
     }
 }
 
+impl Default for MappingsConfig {
+    fn default() -> Self {
+        Self { mappings: Vec::new() }
+    }
+}
+
 /// Resolve the platform-specific config directory.
 pub fn config_dir() -> PathBuf {
     #[cfg(target_os = "macos")]

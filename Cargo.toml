@@ -7,6 +7,7 @@ members = [
     "crates/midium-plugins",
     "crates/midium-shortcuts",
     "crates/midium-daemon",
+    "app/src-tauri",
 ]
 
 [workspace.package]
