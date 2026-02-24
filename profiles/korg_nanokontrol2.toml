@@ -1,4 +1,6 @@
 name = "Korg nanoKONTROL2"
+vendor = "Korg"
+model = "nanoKONTROL2"
 match_patterns = ["nanokontrol2", "nanoKONTROL2", "nano kontrol"]
 
 # ---------------------------------------------------------------------------
@@ -337,63 +339,74 @@ label = "Rewind"
 control_type = "button"
 channel = 0
 number = 43
+section = "Transport"
 
 [[controls]]
 label = "Fast Forward"
 control_type = "button"
 channel = 0
 number = 44
+section = "Transport"
 
 [[controls]]
 label = "Stop"
 control_type = "button"
 channel = 0
 number = 42
+section = "Transport"
 
 [[controls]]
 label = "Play"
 control_type = "button"
 channel = 0
 number = 41
+section = "Transport"
 
 [[controls]]
 label = "Record"
 control_type = "button"
 channel = 0
 number = 45
+section = "Transport"
 
 [[controls]]
 label = "Cycle"
 control_type = "button"
 channel = 0
 number = 46
+section = "Transport"
 
 [[controls]]
 label = "Track Prev"
 control_type = "button"
 channel = 0
 number = 58
+section = "Transport"
 
 [[controls]]
 label = "Track Next"
 control_type = "button"
 channel = 0
 number = 59
+section = "Transport"
 
 [[controls]]
 label = "Marker Set"
 control_type = "button"
 channel = 0
 number = 60
+section = "Transport"
 
 [[controls]]
 label = "Marker Prev"
 control_type = "button"
 channel = 0
 number = 61
+section = "Transport"
 
 [[controls]]
 label = "Marker Next"
 control_type = "button"
 channel = 0
 number = 62
+section = "Transport"

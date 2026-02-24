@@ -149,6 +149,40 @@ impl MidiManager {
                 (),
             ) {
                 Ok(connection) => {
+                    // --- Output connection (best-effort, established BEFORE DeviceConnected
+                    //     so that LED sync triggered by the event can actually send data) ---
+                    match MidiOutput::new(&format!("midium-out-{}", port_name)) {
+                        Ok(midi_out) => {
+                            let out_ports = midi_out.ports();
+                            let out_target = out_ports.iter().find(|p| {
+                                midi_out
+                                    .port_name(p)
+                                    .map(|n| n == port_name)
+                                    .unwrap_or(false)
+                            });
+
+                            if let Some(out_port) = out_target {
+                                match midi_out
+                                    .connect(out_port, &format!("midium-out-{}", port_name))
+                                {
+                                    Ok(out_conn) => {
+                                        debug!(port = %port_name, "MIDI output connected");
+                                        self.out_connections
+                                            .lock()
+                                            .unwrap()
+                                            .insert(port_name.clone(), out_conn);
+                                    }
+                                    Err(e) => {
+                                        debug!(port = %port_name, "MIDI output connection failed (LED feedback unavailable): {e}");
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            debug!(port = %port_name, "Could not open MIDI output: {e}");
+                        }
+                    }
+
                     debug!(port = %port_name, "MIDI input connected");
                     self.event_bus.publish(AppEvent::DeviceConnected {
                         device: port_name.clone(),
@@ -159,37 +193,6 @@ impl MidiManager {
                 Err(e) => {
                     warn!(port = %port_name, "Failed to connect MIDI input: {e}");
                     continue;
-                }
-            }
-
-            // --- Output connection (best-effort for LED feedback) ---
-            match MidiOutput::new(&format!("midium-out-{}", port_name)) {
-                Ok(midi_out) => {
-                    let out_ports = midi_out.ports();
-                    let out_target = out_ports.iter().find(|p| {
-                        midi_out
-                            .port_name(p)
-                            .map(|n| n == port_name)
-                            .unwrap_or(false)
-                    });
-
-                    if let Some(out_port) = out_target {
-                        match midi_out.connect(out_port, &format!("midium-out-{}", port_name)) {
-                            Ok(out_conn) => {
-                                debug!(port = %port_name, "MIDI output connected");
-                                self.out_connections
-                                    .lock()
-                                    .unwrap()
-                                    .insert(port_name.clone(), out_conn);
-                            }
-                            Err(e) => {
-                                debug!(port = %port_name, "MIDI output connection failed (LED feedback unavailable): {e}");
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    debug!(port = %port_name, "Could not open MIDI output: {e}");
                 }
             }
         }

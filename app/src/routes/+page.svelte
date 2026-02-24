@@ -4,12 +4,26 @@
   import { invoke } from "@tauri-apps/api/core";
   import Mixer from "$lib/Mixer.svelte";
   import MappingEditor from "$lib/MappingEditor.svelte";
+  import Devices from "$lib/Devices.svelte";
   import Settings from "$lib/Settings.svelte";
   import PluginManager from "$lib/PluginManager.svelte";
   import type { MidiEvent } from "$lib/types";
 
-  type Tab = "mixer" | "mappings" | "settings" | "plugins";
+  type Tab = "mixer" | "mappings" | "devices" | "plugins" | "settings";
   let activeTab: Tab = "mixer";
+
+  // When Devices tab fires open-mapping, navigate to Mappings with pre-fill.
+  let mappingPrefill: {
+    device: string;
+    channel: number;
+    controlTypeName: "CC" | "Note" | "PitchBend";
+    controlNumber: number;
+  } | null = null;
+
+  function handleOpenMapping(e: CustomEvent<typeof mappingPrefill>) {
+    mappingPrefill = e.detail;
+    activeTab = "mappings";
+  }
 
   let connectedDevices: string[] = [];
   let lastMidiEvent: (MidiEvent & { ts: number }) | null = null;
@@ -38,7 +52,7 @@
     );
 
     // Populate initial device list from currently connected ports
-    const ports: string[] = await invoke("list_midi_ports").catch(() => []);
+    const ports = await invoke<string[]>("list_midi_ports").catch(() => [] as string[]);
     connectedDevices = ports;
   });
 
@@ -70,6 +84,9 @@
     <nav>
       <button class:active={activeTab === "mixer"} on:click={() => activeTab = "mixer"}>
         <span class="nav-icon">🎚</span> Mixer
+      </button>
+      <button class:active={activeTab === "devices"} on:click={() => activeTab = "devices"}>
+        <span class="nav-icon">🎹</span> Devices
       </button>
       <button class:active={activeTab === "mappings"} on:click={() => activeTab = "mappings"}>
         <span class="nav-icon">⚡</span> Mappings
@@ -112,8 +129,13 @@
   <main class="content">
     {#if activeTab === "mixer"}
       <Mixer />
+    {:else if activeTab === "devices"}
+      <Devices
+        {connectedDevices}
+        on:open-mapping={handleOpenMapping}
+      />
     {:else if activeTab === "mappings"}
-      <MappingEditor />
+      <MappingEditor bind:prefill={mappingPrefill} />
     {:else if activeTab === "plugins"}
       <PluginManager />
     {:else}

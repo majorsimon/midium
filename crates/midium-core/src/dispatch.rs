@@ -10,14 +10,30 @@ pub trait VolumeControl: Send + Sync {
     fn set_default_input(&self, device_id: &str) -> anyhow::Result<()>;
 }
 
+/// Trait implemented by the shortcuts backend (media keys, keyboard shortcuts).
+///
+/// Kept in midium-core so ActionDispatcher can hold it without creating a
+/// circular dependency (midium-shortcuts depends on midium-core, not vice versa).
+pub trait ShortcutExecutor: Send + Sync {
+    fn execute(&self, action: &Action);
+}
+
 /// Routes resolved actions to the appropriate subsystem (audio, shortcuts, plugins).
 pub struct ActionDispatcher {
     audio: Box<dyn VolumeControl>,
+    shortcuts: Option<Box<dyn ShortcutExecutor>>,
 }
 
 impl ActionDispatcher {
     pub fn new(audio: Box<dyn VolumeControl>) -> Self {
-        Self { audio }
+        Self { audio, shortcuts: None }
+    }
+
+    pub fn with_shortcuts(
+        audio: Box<dyn VolumeControl>,
+        shortcuts: Box<dyn ShortcutExecutor>,
+    ) -> Self {
+        Self { audio, shortcuts: Some(shortcuts) }
     }
 
     /// Execute an action with the given transformed value (0.0–1.0).
@@ -59,9 +75,18 @@ impl ActionDispatcher {
             }
             // Handled by PluginManager's own EventBus subscription
             Action::RunPluginAction { .. } => {}
-            // Shortcuts / media keys — Phase 5
-            other => {
-                warn!(?other, "Action not yet implemented");
+            // Shortcuts / media keys
+            Action::MediaPlayPause
+            | Action::MediaNext
+            | Action::MediaPrev
+            | Action::CycleOutputDevices
+            | Action::CycleInputDevices
+            | Action::SendKeyboardShortcut { .. } => {
+                if let Some(sc) = &self.shortcuts {
+                    sc.execute(action);
+                } else {
+                    warn!(?action, "No shortcut executor registered");
+                }
             }
         }
     }

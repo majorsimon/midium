@@ -79,20 +79,27 @@ export interface MidiEvent {
 
 export type ProfileControlType = "slider" | "knob" | "button" | "encoder";
 export type ButtonRole = "solo" | "mute" | "record";
+export type MidiControlType = "cc" | "note" | "pitch_bend";
 
 export interface ProfileControl {
   label: string;
   control_type: ProfileControlType;
+  /** Defaults to "cc" if not specified */
+  midi_type?: MidiControlType;
   channel: number;
   number: number;
   min_value?: number;
   max_value?: number;
   group?: number;
   button_role?: ButtonRole;
+  /** UI grouping label, e.g. "Faders", "Knobs", "Transport" */
+  section?: string;
 }
 
 export interface DeviceProfile {
   name: string;
+  vendor?: string;
+  model?: string;
   match_patterns: string[];
   controls: ProfileControl[];
 }
@@ -111,7 +118,17 @@ export function actionLabel(a: Action): string {
   if ("SetVolume" in a) return `Volume → ${targetLabel(a.SetVolume.target)}`;
   if ("ToggleMute" in a) return `Mute → ${targetLabel(a.ToggleMute.target)}`;
   if ("SetDefaultOutput" in a) return `Out → ${a.SetDefaultOutput.device_id}`;
-  if ("ActionGroup" in a) return `Group (${a.ActionGroup.actions.length})`;
+  if ("SetDefaultInput" in a) return `In → ${a.SetDefaultInput.device_id}`;
+  if ("ActionGroup" in a) {
+    // Flatten SetVolume / ToggleMute targets to a readable list
+    const labels = a.ActionGroup.actions.map(sub => {
+      if (typeof sub === "string") return sub.replace(/([A-Z])/g, " $1").trim();
+      if ("SetVolume" in sub) return `Volume:${targetLabel(sub.SetVolume.target)}`;
+      if ("ToggleMute" in sub) return `Mute:${targetLabel(sub.ToggleMute.target)}`;
+      return "…";
+    });
+    return labels.join(" + ");
+  }
   return JSON.stringify(a);
 }
 

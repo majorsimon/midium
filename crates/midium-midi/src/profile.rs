@@ -6,6 +6,12 @@ use tracing::debug;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceProfile {
     pub name: String,
+    /// Hardware vendor name, e.g. "Korg".
+    #[serde(default)]
+    pub vendor: Option<String>,
+    /// Hardware model name, e.g. "nanoKONTROL2".
+    #[serde(default)]
+    pub model: Option<String>,
     /// Patterns to match against MIDI port names (case-insensitive substring).
     pub match_patterns: Vec<String>,
     #[serde(default)]
@@ -16,20 +22,26 @@ pub struct DeviceProfile {
 pub struct ProfileControl {
     pub label: String,
     pub control_type: ProfileControlType,
+    /// Whether this control sends CC, Note, or PitchBend messages.
+    /// Defaults to CC (covers most sliders, knobs, and encoders).
+    #[serde(default)]
+    pub midi_type: MidiControlType,
     pub channel: u8,
-    /// CC number or Note number.
+    /// CC number, Note number, or 0 for PitchBend.
     pub number: u8,
     #[serde(default)]
     pub min_value: u8,
     #[serde(default = "default_max")]
     pub max_value: u8,
     /// Groups related controls on the same physical channel strip together.
-    /// Controls with the same group index belong to the same channel.
     #[serde(default)]
     pub group: Option<u8>,
     /// Role of this button within its channel group (buttons only).
     #[serde(default)]
     pub button_role: Option<ButtonRole>,
+    /// Logical section name for UI grouping, e.g. "Faders", "Knobs", "Transport".
+    #[serde(default)]
+    pub section: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,8 +53,17 @@ pub enum ProfileControlType {
     Encoder,
 }
 
+/// Whether this control's MIDI messages are CC, Note, or PitchBend.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MidiControlType {
+    #[default]
+    Cc,
+    Note,
+    PitchBend,
+}
+
 /// The functional role of a button within its channel strip group.
-/// Used to route LED feedback to the correct button.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ButtonRole {
@@ -58,7 +79,36 @@ fn default_max() -> u8 {
     127
 }
 
-/// Load all device profiles from a directory of TOML files.
+// ---------------------------------------------------------------------------
+// Bundled profiles (embedded at compile time)
+// ---------------------------------------------------------------------------
+
+/// Returns all device profiles compiled into the binary.
+/// The filesystem loader can override these by name.
+pub fn bundled_profiles() -> Vec<DeviceProfile> {
+    const SOURCES: &[&str] = &[
+        include_str!("../../../profiles/korg_nanokontrol2.toml"),
+        include_str!("../../../profiles/behringer_xtouch_mini.toml"),
+        include_str!("../../../profiles/akai_midimix.toml"),
+        include_str!("../../../profiles/arturia_beatstep.toml"),
+        include_str!("../../../profiles/generic.toml"),
+    ];
+    SOURCES
+        .iter()
+        .filter_map(|src| {
+            toml::from_str::<DeviceProfile>(src)
+                .map_err(|e| tracing::warn!("Failed to parse bundled profile: {e}"))
+                .ok()
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Filesystem loader
+// ---------------------------------------------------------------------------
+
+/// Load device profiles from a directory of TOML files.
+/// Returns only the profiles found in that directory (no bundled ones).
 pub fn load_profiles(dir: &Path) -> Vec<DeviceProfile> {
     let mut profiles = Vec::new();
     if !dir.exists() {
@@ -76,7 +126,7 @@ pub fn load_profiles(dir: &Path) -> Vec<DeviceProfile> {
             match std::fs::read_to_string(&path) {
                 Ok(content) => match toml::from_str::<DeviceProfile>(&content) {
                     Ok(profile) => {
-                        debug!(name = %profile.name, "Loaded device profile");
+                        debug!(name = %profile.name, "Loaded device profile from filesystem");
                         profiles.push(profile);
                     }
                     Err(e) => {
@@ -93,7 +143,10 @@ pub fn load_profiles(dir: &Path) -> Vec<DeviceProfile> {
 }
 
 /// Match a MIDI port name against loaded profiles.
-pub fn match_profile<'a>(port_name: &str, profiles: &'a [DeviceProfile]) -> Option<&'a DeviceProfile> {
+pub fn match_profile<'a>(
+    port_name: &str,
+    profiles: &'a [DeviceProfile],
+) -> Option<&'a DeviceProfile> {
     let name_lower = port_name.to_lowercase();
     profiles.iter().find(|p| {
         p.match_patterns

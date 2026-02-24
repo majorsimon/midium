@@ -18,6 +18,7 @@ use midium_core::{
 };
 use midium_midi::{manager::MidiManager, profile::load_profiles, DeviceProfile};
 use midium_plugins::{PluginInfo, PluginManager};
+use midium_shortcuts::ShortcutHandler;
 
 // ---------------------------------------------------------------------------
 // Shared audio adapter
@@ -84,6 +85,13 @@ fn list_output_devices(
 }
 
 #[tauri::command]
+fn list_input_devices(
+    state: State<AppState>,
+) -> Result<Vec<midium_core::types::AudioDeviceInfo>, String> {
+    state.audio.list_input_devices().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn list_sessions(
     state: State<AppState>,
 ) -> Result<Vec<midium_core::types::AudioSessionInfo>, String> {
@@ -93,6 +101,11 @@ fn list_sessions(
 #[tauri::command]
 fn get_volume(state: State<AppState>, target: AudioTarget) -> Result<f64, String> {
     state.audio.get_volume(&target).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_muted(state: State<AppState>, target: AudioTarget) -> Result<bool, String> {
+    state.audio.is_muted(&target).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -184,6 +197,62 @@ fn send_midi(state: State<AppState>, device: String, data: Vec<u8>) -> Result<()
     Ok(())
 }
 
+#[tauri::command]
+fn export_mappings(state: State<AppState>) -> Result<String, String> {
+    let config = state.mappings_config.lock().unwrap();
+    toml::to_string(&*config).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn import_mappings(state: State<AppState>, content: String) -> Result<(), String> {
+    let new_config: MappingsConfig = toml::from_str(&content).map_err(|e| e.to_string())?;
+
+    let mut config = state.mappings_config.lock().unwrap();
+    *config = new_config;
+
+    state
+        .mapping_engine
+        .lock()
+        .unwrap()
+        .load_mappings(config.mappings.clone());
+
+    persist_mappings(&config)
+}
+
+#[tauri::command]
+fn export_profile(state: State<AppState>, name: String) -> Result<String, String> {
+    let profile = state
+        .profiles
+        .iter()
+        .find(|p| p.name == name)
+        .ok_or_else(|| format!("Profile '{name}' not found"))?;
+    toml::to_string(profile).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn import_profile(content: String) -> Result<String, String> {
+    let profile: midium_midi::DeviceProfile =
+        toml::from_str(&content).map_err(|e| e.to_string())?;
+    let name = profile.name.clone();
+
+    // Save to user profile directory so it persists.
+    let dir = config_dir().join("profiles");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    // Sanitise filename.
+    let filename = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect::<String>()
+        .to_lowercase()
+        + ".toml";
+
+    std::fs::write(dir.join(&filename), &content).map_err(|e| e.to_string())?;
+
+    // Return the name so the frontend knows what was imported.
+    Ok(name)
+}
+
 fn persist_mappings(config: &MappingsConfig) -> Result<(), String> {
     std::fs::create_dir_all(config_dir()).map_err(|e| e.to_string())?;
     let content = toml::to_string(config).map_err(|e| e.to_string())?;
@@ -247,23 +316,38 @@ pub fn run() {
             let mappings_config = load_mappings().unwrap_or_default();
 
             let profiles = {
-                let from_cwd = load_profiles(&std::path::PathBuf::from("profiles"));
-                if !from_cwd.is_empty() {
-                    from_cwd
-                } else if let Ok(exe_dir) = std::env::current_exe()
-                    .map(|p| p.parent().unwrap_or(&p.clone()).to_path_buf())
-                {
-                    load_profiles(&exe_dir.join("profiles"))
-                } else {
-                    vec![]
+                // Start with compile-time bundled profiles.
+                let mut profiles = midium_midi::profile::bundled_profiles();
+
+                // Overlay profiles from filesystem — users can add custom profiles or
+                // override bundled ones by providing a file with the same `name` field.
+                let mut fs_dirs = vec![
+                    std::path::PathBuf::from("profiles"),
+                    config_dir().join("profiles"),
+                ];
+                if let Ok(exe) = std::env::current_exe() {
+                    if let Some(parent) = exe.parent() {
+                        fs_dirs.push(parent.join("profiles"));
+                    }
                 }
+                for p in fs_dirs.iter().flat_map(|d| load_profiles(d)) {
+                    if let Some(pos) = profiles.iter().position(|b| b.name == p.name) {
+                        profiles[pos] = p;
+                    } else {
+                        profiles.push(p);
+                    }
+                }
+                profiles
             };
 
             let event_bus = EventBus::new();
             let audio_box = create_backend().expect("Failed to initialize audio backend");
             let audio: Arc<dyn AudioBackend> = Arc::from(audio_box);
 
-            let dispatcher = Arc::new(ActionDispatcher::new(Box::new(SharedAudio(audio.clone()))));
+            let dispatcher = Arc::new(ActionDispatcher::with_shortcuts(
+                Box::new(SharedAudio(audio.clone())),
+                Box::new(ShortcutHandler::new()),
+            ));
 
             let mapping_engine = Arc::new(Mutex::new(MappingEngine::new(event_bus.clone())));
             mapping_engine
@@ -371,8 +455,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_capabilities,
             list_output_devices,
+            list_input_devices,
             list_sessions,
             get_volume,
+            get_muted,
             set_volume,
             toggle_mute,
             set_default_output,
@@ -387,6 +473,10 @@ pub fn run() {
             list_plugins,
             list_profiles,
             send_midi,
+            export_mappings,
+            import_mappings,
+            export_profile,
+            import_profile,
         ])
         .run(tauri::generate_context!())
         .expect("error running midium");

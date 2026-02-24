@@ -1,4 +1,6 @@
 name = "Behringer X-Touch Mini"
+vendor = "Behringer"
+model = "X-Touch Mini"
 match_patterns = ["x-touch mini", "xtouch mini", "X-TOUCH MINI"]
 
 [[controls]]

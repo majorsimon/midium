@@ -37,6 +37,9 @@ coreaudio-sys = "0.2"
 # Plugins
 mlua = { version = "0.10", features = ["lua54", "vendored", "serialize"] }
 
+# Shortcuts / media keys
+enigo = "0.2"
+
 # Internal crates
 midium-core = { path = "crates/midium-core" }
 midium-midi = { path = "crates/midium-midi" }

@@ -18,11 +18,18 @@
    * (e.g. per-app audio not supported on this platform yet)
    */
   export let unavailable: boolean = false;
+  /** When false, hides the fader and vol% (e.g. for device-selector strips) */
+  export let showFader: boolean = true;
+  /** When true, R is a clickable button rather than a passive indicator */
+  export let rClickable: boolean = false;
+  /** When false, the S (assign) button is hidden */
+  export let showS: boolean = true;
 
   const dispatch = createEventDispatcher<{
     "volume-change": number;
     "mute-toggle": void;
     "assign-click": void;
+    "r-click": void;
   }>();
 
   $: live = (assigned || isMaster) && !unavailable;
@@ -47,7 +54,7 @@
 
   <!-- Fader -->
   <div class="fader-wrap">
-    {#if assigned || isMaster}
+    {#if (assigned || isMaster) && showFader}
       <input
         class="fader"
         class:muted
@@ -66,16 +73,18 @@
 
   <!-- Volume % -->
   <div class="vol-pct">
-    {live ? Math.round(volume * 100) + "%" : ""}
+    {live && showFader ? Math.round(volume * 100) + "%" : ""}
   </div>
 
   <!-- S / M / R buttons -->
   <div class="btns">
-    <button
-      class="btn s"
-      on:click={() => dispatch("assign-click")}
-      title={assigned || isMaster ? "Reassign" : "Assign app"}
-    >S</button>
+    {#if showS}
+      <button
+        class="btn s"
+        on:click={() => dispatch("assign-click")}
+        title={assigned || isMaster ? "Reassign" : "Assign app"}
+      >S</button>
+    {/if}
 
     <button
       class="btn m"
@@ -85,8 +94,17 @@
       title={muted ? "Unmute" : "Mute"}
     >M</button>
 
-    <!-- R is an indicator, not a button -->
-    <span class="btn r" class:on={active} title={active ? "Active" : "Silent"}>R</span>
+    <!-- R: clickable "set as default" when rClickable, otherwise passive indicator -->
+    {#if rClickable}
+      <button
+        class="btn r"
+        class:on={active}
+        on:click={() => dispatch("r-click")}
+        title={active ? "Default output" : "Set as default output"}
+      >R</button>
+    {:else}
+      <span class="btn r" class:on={active} title={active ? "Active" : "Silent"}>R</span>
+    {/if}
   </div>
 </div>
 
@@ -217,9 +235,16 @@
     color: var(--danger);
   }
 
-  /* R — active indicator */
+  /* R — active indicator / default-output selector */
   .btn.r {
     cursor: default;
+  }
+  button.btn.r {
+    cursor: pointer;
+  }
+  button.btn.r:not(.on):hover {
+    background: color-mix(in srgb, var(--success) 12%, var(--surface2));
+    color: var(--success);
   }
   .btn.r.on {
     background: color-mix(in srgb, var(--success) 22%, var(--surface2));

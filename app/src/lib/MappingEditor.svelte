@@ -4,13 +4,26 @@
   import { listen } from "@tauri-apps/api/event";
   import {
     type Mapping, type ControlId, type MidiEvent,
+    type AudioDeviceInfo, type AudioSessionInfo,
     controlLabel, actionLabel,
   } from "./types";
 
+  /** When set by the Devices tab, opens the Add form pre-filled with this control. */
+  export let prefill: {
+    device: string;
+    channel: number;
+    controlTypeName: "CC" | "Note" | "PitchBend";
+    controlNumber: number;
+  } | null = null;
+
   let mappings: Mapping[] = [];
   let midiPorts: string[] = [];
+  let outputDevices: AudioDeviceInfo[] = [];
+  let inputDevices: AudioDeviceInfo[] = [];
+  let sessions: AudioSessionInfo[] = [];
   let learnActive = false;
   let showAddForm = false;
+  let pendingDeleteControl: ControlId | null = null;
 
   let form = {
     device: "",
@@ -18,16 +31,36 @@
     controlTypeName: "CC" as "CC" | "Note" | "PitchBend",
     controlNumber: 0,
     actionTypeName: "SetVolume" as string,
-    actionTarget: "SystemMaster" as string,
+    actionTargets: ["SystemMaster"] as string[],
     transformName: "Linear" as string,
   };
 
+  // Apply prefill whenever the prop changes (set from Devices tab).
+  $: if (prefill) {
+    form.device = prefill.device;
+    form.channel = prefill.channel;
+    form.controlTypeName = prefill.controlTypeName;
+    form.controlNumber = prefill.controlNumber;
+    showAddForm = true;
+    loadAudioTargets();
+    prefill = null; // consume it
+  }
+
   async function loadMappings() {
-    mappings = await invoke("get_mappings").catch(() => [] as Mapping[]);
+    mappings = await invoke<Mapping[]>("get_mappings").catch(() => [] as Mapping[]);
+    pendingDeleteControl = null;
   }
 
   async function loadPorts() {
-    midiPorts = await invoke("list_midi_ports").catch(() => [] as string[]);
+    midiPorts = await invoke<string[]>("list_midi_ports").catch(() => [] as string[]);
+  }
+
+  async function loadAudioTargets() {
+    [outputDevices, inputDevices, sessions] = await Promise.all([
+      invoke<AudioDeviceInfo[]>("list_output_devices").catch(() => [] as AudioDeviceInfo[]),
+      invoke<AudioDeviceInfo[]>("list_input_devices").catch(() => [] as AudioDeviceInfo[]),
+      invoke<AudioSessionInfo[]>("list_sessions").catch(() => [] as AudioSessionInfo[]),
+    ]);
   }
 
   async function startLearn() {
@@ -70,22 +103,67 @@
     return { device: form.device, channel: form.channel, control_type: ct };
   }
 
-  function buildAction() {
-    switch (form.actionTypeName) {
-      case "SetVolume":   return { SetVolume: { target: resolveTarget(form.actionTarget) } };
-      case "ToggleMute":  return { ToggleMute: { target: resolveTarget(form.actionTarget) } };
-      case "MediaPlayPause": return "MediaPlayPause";
-      case "MediaNext":      return "MediaNext";
-      case "MediaPrev":      return "MediaPrev";
-      default:            return { SetVolume: { target: "SystemMaster" as const } };
-    }
-  }
-
   function resolveTarget(t: string) {
     if (t === "SystemMaster") return "SystemMaster" as const;
     if (t === "FocusedApplication") return "FocusedApplication" as const;
     if (t.startsWith("app:")) return { Application: { name: t.slice(4) } };
+    if (t.startsWith("device:")) return { Device: { id: t.slice(7) } };
     return "SystemMaster" as const;
+  }
+
+  /** Human-readable label for an encoded target string (for tag display). */
+  function targetDisplayLabel(t: string): string {
+    if (t === "SystemMaster") return "System Master";
+    if (t === "FocusedApplication") return "Focused App";
+    if (t.startsWith("app:")) return t.slice(4);
+    if (t.startsWith("device:")) {
+      const id = t.slice(7);
+      return [...outputDevices, ...inputDevices].find(d => d.id === id)?.name ?? id;
+    }
+    return t;
+  }
+
+  function buildAction() {
+    switch (form.actionTypeName) {
+      case "SetVolume": {
+        const targets = form.actionTargets.length > 0 ? form.actionTargets : ["SystemMaster"];
+        if (targets.length === 1) return { SetVolume: { target: resolveTarget(targets[0]) } };
+        return { ActionGroup: { actions: targets.map(t => ({ SetVolume: { target: resolveTarget(t) } })) } };
+      }
+      case "ToggleMute": {
+        const targets = form.actionTargets.length > 0 ? form.actionTargets : ["SystemMaster"];
+        if (targets.length === 1) return { ToggleMute: { target: resolveTarget(targets[0]) } };
+        return { ActionGroup: { actions: targets.map(t => ({ ToggleMute: { target: resolveTarget(t) } })) } };
+      }
+      case "SetDefaultOutput": {
+        const raw = form.actionTargets[0] ?? "";
+        const device_id = raw.startsWith("device:") ? raw.slice(7) : raw;
+        return { SetDefaultOutput: { device_id } };
+      }
+      case "SetDefaultInput": {
+        const raw = form.actionTargets[0] ?? "";
+        const device_id = raw.startsWith("device:") ? raw.slice(7) : raw;
+        return { SetDefaultInput: { device_id } };
+      }
+      case "MediaPlayPause": return "MediaPlayPause";
+      case "MediaNext":      return "MediaNext";
+      case "MediaPrev":      return "MediaPrev";
+      default: return { SetVolume: { target: "SystemMaster" as const } };
+    }
+  }
+
+  /** Add a target from the dropdown; reset the select back to placeholder. */
+  function onAddTarget(e: Event) {
+    const sel = e.target as HTMLSelectElement;
+    const val = sel.value;
+    if (val && !form.actionTargets.includes(val)) {
+      form.actionTargets = [...form.actionTargets, val];
+    }
+    sel.value = "";
+  }
+
+  function removeTarget(i: number) {
+    form.actionTargets = form.actionTargets.filter((_, j) => j !== i);
   }
 
   async function saveMapping() {
@@ -100,7 +178,7 @@
   }
 
   async function deleteMapping(control: ControlId) {
-    if (!confirm("Delete this mapping?")) return;
+    pendingDeleteControl = null;
     await invoke("delete_mapping", { control }).catch(console.error);
     await loadMappings();
   }
@@ -113,7 +191,7 @@
   }
 
   onMount(async () => {
-    await Promise.all([loadMappings(), loadPorts()]);
+    await Promise.all([loadMappings(), loadPorts(), loadAudioTargets()]);
     await listen<MidiEvent>("midi-learn-result", (e) => {
       applyLearnedControl(e.payload);
     });
@@ -121,16 +199,15 @@
 </script>
 
 <div class="editor">
-  <!-- Toolbar -->
-  <div class="toolbar card">
-    <span class="section-title" style="margin-bottom: 0;">
-      Mappings
+  <!-- Header bar (matches mixer/settings header pattern) -->
+  <div class="header">
+    <div class="header-left">
+      <span class="header-title">Mappings</span>
       {#if mappings.length > 0}
         <span class="count-badge">{mappings.length}</span>
       {/if}
-    </span>
-
-    <div class="toolbar-right">
+    </div>
+    <div class="header-right">
       {#if learnActive}
         <span class="learn-badge">
           <span class="dot-pulse"></span>
@@ -140,10 +217,10 @@
       {:else}
         <button on:click={startLearn}>MIDI Learn</button>
       {/if}
-      <button
-        class="primary"
-        on:click={() => { showAddForm = !showAddForm; }}
-      >
+      <button class="primary" on:click={() => {
+        showAddForm = !showAddForm;
+        if (showAddForm) loadAudioTargets();
+      }}>
         {showAddForm ? "Cancel" : "+ Add"}
       </button>
     </div>
@@ -152,142 +229,244 @@
   <!-- Add / edit form -->
   {#if showAddForm}
     <div class="card form-card">
-      <div class="section-title" style="margin-bottom: 14px;">
+      <div class="form-title">
         {learnActive ? "Configure Learned Control" : "New Mapping"}
       </div>
 
-      <div class="form-row">
-        <!-- Control section -->
-        <div class="form-section">
-          <div class="form-section-title">MIDI Control</div>
-          <div class="form-fields">
+      <!-- Two-panel layout: MIDI Control | Action -->
+      <div class="form-panels">
+        <div class="form-panel">
+          <div class="panel-label">MIDI Control</div>
+          <div class="field">
+            <label>Device</label>
+            {#if midiPorts.length > 0}
+              <select bind:value={form.device}>
+                {#each midiPorts as port}
+                  <option value={port}>{port}</option>
+                {/each}
+                <option value="">Custom…</option>
+              </select>
+              {#if form.device === ""}
+                <input bind:value={form.device} placeholder="Device name" style="margin-top:4px;" />
+              {/if}
+            {:else}
+              <input bind:value={form.device} placeholder="nanoKONTROL2" />
+            {/if}
+          </div>
+          <div class="field-row">
             <div class="field">
-              <label>Device</label>
-              {#if midiPorts.length > 0}
-                <select bind:value={form.device}>
-                  {#each midiPorts as port}
-                    <option value={port}>{port}</option>
-                  {/each}
-                  <option value="">Custom…</option>
-                </select>
-                {#if form.device === ""}
-                  <input bind:value={form.device} placeholder="Device name" style="margin-top:4px;" />
-                {/if}
-              {:else}
-                <input bind:value={form.device} placeholder="nanoKONTROL2" />
-              {/if}
+              <label>Ch</label>
+              <input type="number" min="0" max="15" bind:value={form.channel} />
             </div>
-
-            <div class="field-row2">
-              <div class="field">
-                <label>Channel</label>
-                <input type="number" min="0" max="15" bind:value={form.channel} />
-              </div>
-              <div class="field">
-                <label>Type</label>
-                <select bind:value={form.controlTypeName}>
-                  <option>CC</option>
-                  <option>Note</option>
-                  <option>PitchBend</option>
-                </select>
-              </div>
-              {#if form.controlTypeName !== "PitchBend"}
-                <div class="field">
-                  <label>Number</label>
-                  <input type="number" min="0" max="127" bind:value={form.controlNumber} />
-                </div>
-              {/if}
+            <div class="field">
+              <label>Type</label>
+              <select bind:value={form.controlTypeName}>
+                <option>CC</option>
+                <option>Note</option>
+                <option>PitchBend</option>
+              </select>
             </div>
+            {#if form.controlTypeName !== "PitchBend"}
+              <div class="field">
+                <label>#</label>
+                <input type="number" min="0" max="127" bind:value={form.controlNumber} />
+              </div>
+            {/if}
           </div>
         </div>
 
-        <div class="form-divider">→</div>
+        <div class="form-arrow">→</div>
 
-        <!-- Action section -->
-        <div class="form-section">
-          <div class="form-section-title">Action</div>
-          <div class="form-fields">
-            <div class="field">
-              <label>Action</label>
-              <select bind:value={form.actionTypeName}>
+        <div class="form-panel">
+          <div class="panel-label">Action</div>
+          <div class="field">
+            <label>Action</label>
+            <select bind:value={form.actionTypeName}>
+              <optgroup label="Volume">
                 <option value="SetVolume">Set Volume</option>
                 <option value="ToggleMute">Toggle Mute</option>
+              </optgroup>
+              <optgroup label="Devices">
+                <option value="SetDefaultOutput">Set Default Output</option>
+                <option value="SetDefaultInput">Set Default Input</option>
+              </optgroup>
+              <optgroup label="Media">
                 <option value="MediaPlayPause">Play / Pause</option>
                 <option value="MediaNext">Next Track</option>
                 <option value="MediaPrev">Previous Track</option>
-              </select>
-            </div>
-
-            {#if form.actionTypeName === "SetVolume" || form.actionTypeName === "ToggleMute"}
-              <div class="field">
-                <label>Target</label>
-                <select bind:value={form.actionTarget}>
-                  <option value="SystemMaster">System Master</option>
-                  <option value="FocusedApplication">Focused App</option>
-                </select>
-              </div>
-            {/if}
-
+              </optgroup>
+            </select>
+          </div>
+          {#if form.actionTypeName === "SetDefaultOutput" || form.actionTypeName === "SetDefaultInput"}
             <div class="field">
-              <label>Transform</label>
-              <select bind:value={form.transformName}>
-                <option>Linear</option>
-                <option>Logarithmic</option>
-                <option>Toggle</option>
-                <option>Momentary</option>
+              <label>Device</label>
+              <select
+                value={form.actionTargets[0] ?? ""}
+                on:change={(e) => { form.actionTargets = [e.currentTarget.value]; }}
+              >
+                <option value="" disabled>Select device…</option>
+                {#if form.actionTypeName === "SetDefaultOutput" && outputDevices.length > 0}
+                  {#each outputDevices as dev}
+                    <option value="device:{dev.id}">{dev.name}{dev.is_default ? " ✓" : ""}</option>
+                  {/each}
+                {/if}
+                {#if form.actionTypeName === "SetDefaultInput" && inputDevices.length > 0}
+                  {#each inputDevices as dev}
+                    <option value="device:{dev.id}">{dev.name}{dev.is_default ? " ✓" : ""}</option>
+                  {/each}
+                {/if}
               </select>
             </div>
+          {/if}
+
+          {#if form.actionTypeName === "SetVolume" || form.actionTypeName === "ToggleMute"}
+            <div class="field">
+              <label>Targets</label>
+
+              <!-- Selected targets as removable tags -->
+              {#if form.actionTargets.length > 0}
+                <div class="target-tags">
+                  {#each form.actionTargets as t, i}
+                    <span class="target-tag">
+                      {targetDisplayLabel(t)}
+                      <button class="tag-remove" on:click={() => removeTarget(i)} title="Remove">×</button>
+                    </span>
+                  {/each}
+                </div>
+              {/if}
+
+              <!-- "Add target" dropdown — resets to placeholder after each selection -->
+              <select on:change={onAddTarget}>
+                <option value="" disabled selected>Add target…</option>
+                <option
+                  value="SystemMaster"
+                  disabled={form.actionTargets.includes("SystemMaster")}
+                >System Master</option>
+
+                {#if outputDevices.length > 0}
+                  <optgroup label="Output Devices">
+                    {#each outputDevices as dev}
+                      <option
+                        value="device:{dev.id}"
+                        disabled={form.actionTargets.includes(`device:${dev.id}`)}
+                      >{dev.name}{dev.is_default ? " ✓" : ""}</option>
+                    {/each}
+                  </optgroup>
+                {/if}
+
+                {#if inputDevices.length > 0}
+                  <optgroup label="Input Devices">
+                    {#each inputDevices as dev}
+                      <option
+                        value="device:{dev.id}"
+                        disabled={form.actionTargets.includes(`device:${dev.id}`)}
+                      >{dev.name}{dev.is_default ? " ✓" : ""}</option>
+                    {/each}
+                  </optgroup>
+                {/if}
+
+                {#if sessions.length > 0}
+                  <optgroup label="Running Apps">
+                    {#each sessions as s}
+                      <option
+                        value="app:{s.name}"
+                        disabled={form.actionTargets.includes(`app:${s.name}`)}
+                      >{s.name}</option>
+                    {/each}
+                  </optgroup>
+                {/if}
+
+                <optgroup label="Other">
+                  <option
+                    value="FocusedApplication"
+                    disabled={form.actionTargets.includes("FocusedApplication")}
+                  >Focused App (active window)</option>
+                </optgroup>
+              </select>
+            </div>
+          {/if}
+          <div class="field">
+            <label>Curve</label>
+            <select bind:value={form.transformName}>
+              <option>Linear</option>
+              <option>Logarithmic</option>
+              <option>Toggle</option>
+              <option>Momentary</option>
+            </select>
           </div>
         </div>
       </div>
 
-      <div class="form-actions">
-        <button class="primary" on:click={saveMapping}>Save</button>
+      <div class="form-footer">
+        <button class="primary" on:click={saveMapping}>Save Mapping</button>
         <button on:click={() => showAddForm = false}>Cancel</button>
       </div>
     </div>
   {/if}
 
   <!-- Mappings list -->
-  {#if mappings.length === 0}
+  {#if mappings.length === 0 && !showAddForm}
     <div class="card empty-state">
       No mappings yet. Use <strong>MIDI Learn</strong> — press a control on your
       device to capture it — or click <strong>+ Add</strong> to enter values manually.
     </div>
-  {:else}
+  {:else if mappings.length > 0}
     <div class="mapping-list">
+      <!-- Column header -->
+      <div class="list-header">
+        <span class="col-control">MIDI Control</span>
+        <span class="col-sep"></span>
+        <span class="col-action">Action</span>
+        <span class="col-curve">Curve</span>
+        <span class="col-del"></span>
+      </div>
+
       {#each mappings as m}
-        <div class="mapping-card card">
-          <!-- MIDI source pill -->
-          <div class="mapping-control">
-            <span class="device-tag" title={m.control.device}>
-              {m.control.device.length > 20
-                ? m.control.device.slice(0, 18) + "…"
+        <div class="mapping-row card">
+          <!-- MIDI source -->
+          <div class="col-control">
+            <span class="tag device-tag" title={m.control.device}>
+              {m.control.device.length > 18
+                ? m.control.device.slice(0, 16) + "…"
                 : m.control.device}
             </span>
-            <span class="ch-tag">ch{m.control.channel}</span>
-            <span class="cc-tag">{controlLabel(m.control)}</span>
+            <span class="tag dim-tag">ch{m.control.channel}</span>
+            <span class="tag accent-tag">{controlLabel(m.control)}</span>
           </div>
 
-          <!-- Arrow -->
-          <div class="mapping-arrow">→</div>
+          <div class="col-sep">→</div>
 
           <!-- Action -->
-          <div class="mapping-action">
-            {actionLabel(m.action)}
-          </div>
+          <div class="col-action">{actionLabel(m.action)}</div>
 
           <!-- Transform -->
-          <div class="mapping-transform">
-            <span class="tag">{transformLabel(m.transform)}</span>
+          <div class="col-curve">
+            <span class="tag dim-tag">{transformLabel(m.transform)}</span>
           </div>
 
-          <!-- Delete -->
-          <button
-            class="del-btn"
-            on:click={() => deleteMapping(m.control)}
-            title="Delete mapping"
-          >×</button>
+          <!-- Delete — two-step inline confirm (window.confirm is blocked in Tauri) -->
+          <div class="col-del">
+            {#if pendingDeleteControl === m.control}
+              <div class="del-confirm">
+                <button
+                  class="del-btn del-yes"
+                  title="Confirm delete"
+                  on:click={() => deleteMapping(m.control)}
+                >✓</button>
+                <button
+                  class="del-btn del-no"
+                  title="Cancel"
+                  on:click={() => pendingDeleteControl = null}
+                >✗</button>
+              </div>
+            {:else}
+              <button
+                class="del-btn"
+                on:click={() => pendingDeleteControl = m.control}
+                title="Delete"
+              >×</button>
+            {/if}
+          </div>
         </div>
       {/each}
     </div>
@@ -297,20 +476,36 @@
 <style>
   .editor {
     padding: 20px;
-    max-width: 900px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
+    max-width: 860px;
   }
 
-  /* ---- Toolbar ---- */
-  .toolbar {
+  /* ---- Header (matches the pattern used in mixer top area) ---- */
+  .header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 14px;
+    padding: 0 2px 10px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2px;
   }
-  .toolbar-right { display: flex; gap: 8px; align-items: center; }
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .header-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .header-right {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
 
   .count-badge {
     display: inline-flex;
@@ -324,27 +519,25 @@
     min-width: 18px;
     height: 18px;
     padding: 0 5px;
-    margin-left: 6px;
-    vertical-align: middle;
   }
 
   .learn-badge {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 5px 10px;
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    padding: 4px 10px;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
     border: 1px solid var(--accent);
     border-radius: var(--radius);
     color: var(--accent);
-    font-size: 12px;
+    font-size: 11px;
     animation: badge-pulse 1.4s ease-in-out infinite;
   }
-  @keyframes badge-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+  @keyframes badge-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 
   .dot-pulse {
-    width: 7px;
-    height: 7px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     background: var(--accent);
     flex-shrink: 0;
@@ -353,38 +546,46 @@
   @keyframes dot-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
   /* ---- Add form ---- */
-  .form-card { }
+  .form-card {
+    padding: 14px 16px;
+  }
 
-  .form-row {
+  .form-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 12px;
+  }
+
+  .form-panels {
     display: flex;
-    gap: 16px;
+    gap: 0;
     align-items: flex-start;
   }
 
-  .form-section {
+  .form-panel {
     flex: 1;
-  }
-
-  .form-section-title {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    margin-bottom: 8px;
-  }
-
-  .form-divider {
-    font-size: 18px;
-    color: var(--text-muted);
-    padding-top: 28px;
-    flex-shrink: 0;
-  }
-
-  .form-fields {
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+
+  .panel-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+  }
+
+  .form-arrow {
+    font-size: 16px;
+    color: var(--text-muted);
+    padding: 24px 16px 0;
+    flex-shrink: 0;
   }
 
   .field {
@@ -404,18 +605,62 @@
     width: 100%;
   }
 
-  .field-row2 {
+  .field-row {
     display: flex;
-    gap: 8px;
+    gap: 6px;
   }
-  .field-row2 .field { flex: 1; }
+  .field-row .field { flex: 1; }
 
-  .form-actions {
+  .form-footer {
     display: flex;
     gap: 8px;
     margin-top: 14px;
     padding-top: 12px;
     border-top: 1px solid var(--border);
+  }
+
+  /* ---- Target tag list ---- */
+  .target-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 5px;
+  }
+
+  .target-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px 2px 8px;
+    background: color-mix(in srgb, var(--accent) 14%, var(--surface2));
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+    border-radius: 10px;
+    font-size: 11px;
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .tag-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: var(--accent);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.6;
+    border-radius: 50%;
+    transition: opacity 0.1s, background 0.1s;
+  }
+  .tag-remove:hover {
+    opacity: 1;
+    background: color-mix(in srgb, var(--danger) 20%, transparent);
+    color: var(--danger);
   }
 
   /* ---- Empty state ---- */
@@ -431,68 +676,38 @@
   .mapping-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
   }
 
-  .mapping-card {
+  /* Column header row */
+  .list-header {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 14px;
+    padding: 0 14px 4px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-muted);
   }
 
-  .mapping-control {
+  /* Column widths shared between header and rows */
+  .col-control {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
+    width: 260px;
     flex-shrink: 0;
-    min-width: 0;
   }
-
-  .device-tag {
-    font-size: 11px;
-    font-weight: 500;
+  .col-sep {
+    width: 18px;
+    flex-shrink: 0;
     color: var(--text-muted);
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 2px 7px;
-    white-space: nowrap;
-    max-width: 160px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 12px;
+    text-align: center;
   }
-
-  .ch-tag {
-    font-size: 10px;
-    color: var(--text-muted);
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 2px 5px;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .cc-tag {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 12%, var(--surface2));
-    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
-    border-radius: 4px;
-    padding: 2px 7px;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .mapping-arrow {
-    color: var(--text-muted);
-    font-size: 14px;
-    flex-shrink: 0;
-  }
-
-  .mapping-action {
+  .col-action {
     flex: 1;
     font-size: 12px;
     font-weight: 500;
@@ -502,30 +717,93 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  .mapping-transform {
+  .col-curve {
+    width: 90px;
     flex-shrink: 0;
+    text-align: right;
+  }
+  .col-del {
+    width: 52px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+  }
+  .del-confirm {
+    display: flex;
+    gap: 2px;
   }
 
+  /* Mapping row */
+  .mapping-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    border-radius: var(--radius);
+  }
+  .mapping-row:hover {
+    background: color-mix(in srgb, var(--surface2) 60%, var(--surface));
+  }
+
+  /* Tags */
+  .tag {
+    font-size: 10px;
+    border-radius: 4px;
+    padding: 2px 6px;
+    white-space: nowrap;
+  }
+  .device-tag {
+    font-weight: 500;
+    color: var(--text-muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dim-tag {
+    color: var(--text-muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+  }
+  .accent-tag {
+    font-weight: 700;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface2));
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  }
+
+  /* Delete button */
   .del-btn {
-    flex-shrink: 0;
     width: 22px;
     height: 22px;
     border-radius: 4px;
     border: 1px solid transparent;
     background: transparent;
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: 13px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
+    line-height: 1;
     transition: background 0.1s, color 0.1s, border-color 0.1s;
   }
   .del-btn:hover {
     background: color-mix(in srgb, var(--danger) 12%, var(--surface2));
     color: var(--danger);
     border-color: var(--danger);
+  }
+  .del-yes:hover {
+    background: color-mix(in srgb, var(--success) 15%, var(--surface2));
+    color: var(--success);
+    border-color: var(--success);
+  }
+  .del-no:hover {
+    background: color-mix(in srgb, var(--text-muted) 15%, var(--surface2));
+    color: var(--text);
+    border-color: var(--border);
   }
 </style>

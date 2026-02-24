@@ -1,0 +1,253 @@
+name = "Arturia BeatStep"
+vendor = "Arturia"
+model = "BeatStep"
+match_patterns = ["beatstep", "beat step"]
+
+# ---------------------------------------------------------------------------
+# 16 rotary encoders — default CC assignments (factory preset)
+# Note: these can be remapped via Arturia MIDI Control Center
+# ---------------------------------------------------------------------------
+
+[[controls]]
+label = "Encoder 1"
+control_type = "encoder"
+channel = 0
+number = 10
+section = "Encoders"
+
+[[controls]]
+label = "Encoder 2"
+control_type = "encoder"
+channel = 0
+number = 74
+section = "Encoders"
+
+[[controls]]
+label = "Encoder 3"
+control_type = "encoder"
+channel = 0
+number = 71
+section = "Encoders"
+
+[[controls]]
+label = "Encoder 4"
+control_type = "encoder"
+channel = 0
+number = 76
+section = "Encoders"
+
+[[controls]]
+label = "Encoder 5"
+control_type = "encoder"
+channel = 0
+number = 77
+section = "Encoders"
+
+[[controls]]
+label = "Encoder 6"
+control_type = "encoder"
+channel = 0
+number = 93
+section = "Encoders"
+
+[[controls]]
+label = "Encoder 7"
+control_type = "encoder"
+channel = 0
+number = 73
+section = "Encoders"
+
+[[controls]]
+label = "Encoder 8"
+control_type = "encoder"
+channel = 0
+number = 75
+section = "Encoders"
+
+[[controls]]
+label = "Encoder 9"
+control_type = "encoder"
+channel = 0
+number = 114
+section = "Encoders"
+
+[[controls]]
+label = "Encoder 10"
+control_type = "encoder"
+channel = 0
+number = 18
+section = "Encoders"
+
+[[controls]]
+label = "Encoder 11"
+control_type = "encoder"
+channel = 0
+number = 19
+section = "Encoders"
+
+[[controls]]
+label = "Encoder 12"
+control_type = "encoder"
+channel = 0
+number = 16
+section = "Encoders"
+
+[[controls]]
+label = "Encoder 13"
+control_type = "encoder"
+channel = 0
+number = 17
+section = "Encoders"
+
+[[controls]]
+label = "Encoder 14"
+control_type = "encoder"
+channel = 0
+number = 91
+section = "Encoders"
+
+[[controls]]
+label = "Encoder 15"
+control_type = "encoder"
+channel = 0
+number = 79
+section = "Encoders"
+
+[[controls]]
+label = "Encoder 16"
+control_type = "encoder"
+channel = 0
+number = 72
+section = "Encoders"
+
+# ---------------------------------------------------------------------------
+# 16 velocity-sensitive pads — default Note assignments (C2–D#3)
+# ---------------------------------------------------------------------------
+
+[[controls]]
+label = "Pad 1"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 36
+section = "Pads"
+
+[[controls]]
+label = "Pad 2"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 37
+section = "Pads"
+
+[[controls]]
+label = "Pad 3"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 38
+section = "Pads"
+
+[[controls]]
+label = "Pad 4"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 39
+section = "Pads"
+
+[[controls]]
+label = "Pad 5"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 40
+section = "Pads"
+
+[[controls]]
+label = "Pad 6"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 41
+section = "Pads"
+
+[[controls]]
+label = "Pad 7"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 42
+section = "Pads"
+
+[[controls]]
+label = "Pad 8"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 43
+section = "Pads"
+
+[[controls]]
+label = "Pad 9"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 44
+section = "Pads"
+
+[[controls]]
+label = "Pad 10"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 45
+section = "Pads"
+
+[[controls]]
+label = "Pad 11"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 46
+section = "Pads"
+
+[[controls]]
+label = "Pad 12"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 47
+section = "Pads"
+
+[[controls]]
+label = "Pad 13"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 48
+section = "Pads"
+
+[[controls]]
+label = "Pad 14"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 49
+section = "Pads"
+
+[[controls]]
+label = "Pad 15"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 50
+section = "Pads"
+
+[[controls]]
+label = "Pad 16"
+control_type = "button"
+midi_type = "note"
+channel = 9
+number = 51
+section = "Pads"

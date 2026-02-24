@@ -1,0 +1,458 @@
+name = "Akai MIDImix"
+vendor = "Akai"
+model = "MIDImix"
+match_patterns = ["midimix", "midi mix"]
+
+# ---------------------------------------------------------------------------
+# Channel strips 1–8 (group = strip number)
+# Each strip: 3 send knobs (rows A/B/C) + mute button + fader
+# ---------------------------------------------------------------------------
+
+[[controls]]
+label = "Send A 1"
+control_type = "knob"
+channel = 0
+number = 16
+group = 1
+section = "Knobs"
+
+[[controls]]
+label = "Send B 1"
+control_type = "knob"
+channel = 0
+number = 17
+group = 1
+section = "Knobs"
+
+[[controls]]
+label = "Send C 1"
+control_type = "knob"
+channel = 0
+number = 18
+group = 1
+section = "Knobs"
+
+[[controls]]
+label = "Fader 1"
+control_type = "slider"
+channel = 0
+number = 19
+group = 1
+section = "Faders"
+
+[[controls]]
+label = "Mute 1"
+control_type = "button"
+midi_type = "note"
+button_role = "mute"
+channel = 0
+number = 1
+group = 1
+section = "Buttons"
+
+[[controls]]
+label = "Rec Arm 1"
+control_type = "button"
+midi_type = "note"
+button_role = "record"
+channel = 0
+number = 0
+group = 1
+section = "Buttons"
+
+# --- Strip 2 ---
+[[controls]]
+label = "Send A 2"
+control_type = "knob"
+channel = 0
+number = 20
+group = 2
+section = "Knobs"
+
+[[controls]]
+label = "Send B 2"
+control_type = "knob"
+channel = 0
+number = 21
+group = 2
+section = "Knobs"
+
+[[controls]]
+label = "Send C 2"
+control_type = "knob"
+channel = 0
+number = 22
+group = 2
+section = "Knobs"
+
+[[controls]]
+label = "Fader 2"
+control_type = "slider"
+channel = 0
+number = 23
+group = 2
+section = "Faders"
+
+[[controls]]
+label = "Mute 2"
+control_type = "button"
+midi_type = "note"
+button_role = "mute"
+channel = 0
+number = 4
+group = 2
+section = "Buttons"
+
+[[controls]]
+label = "Rec Arm 2"
+control_type = "button"
+midi_type = "note"
+button_role = "record"
+channel = 0
+number = 3
+group = 2
+section = "Buttons"
+
+# --- Strip 3 ---
+[[controls]]
+label = "Send A 3"
+control_type = "knob"
+channel = 0
+number = 24
+group = 3
+section = "Knobs"
+
+[[controls]]
+label = "Send B 3"
+control_type = "knob"
+channel = 0
+number = 25
+group = 3
+section = "Knobs"
+
+[[controls]]
+label = "Send C 3"
+control_type = "knob"
+channel = 0
+number = 26
+group = 3
+section = "Knobs"
+
+[[controls]]
+label = "Fader 3"
+control_type = "slider"
+channel = 0
+number = 27
+group = 3
+section = "Faders"
+
+[[controls]]
+label = "Mute 3"
+control_type = "button"
+midi_type = "note"
+button_role = "mute"
+channel = 0
+number = 7
+group = 3
+section = "Buttons"
+
+[[controls]]
+label = "Rec Arm 3"
+control_type = "button"
+midi_type = "note"
+button_role = "record"
+channel = 0
+number = 6
+group = 3
+section = "Buttons"
+
+# --- Strip 4 ---
+[[controls]]
+label = "Send A 4"
+control_type = "knob"
+channel = 0
+number = 28
+group = 4
+section = "Knobs"
+
+[[controls]]
+label = "Send B 4"
+control_type = "knob"
+channel = 0
+number = 29
+group = 4
+section = "Knobs"
+
+[[controls]]
+label = "Send C 4"
+control_type = "knob"
+channel = 0
+number = 30
+group = 4
+section = "Knobs"
+
+[[controls]]
+label = "Fader 4"
+control_type = "slider"
+channel = 0
+number = 31
+group = 4
+section = "Faders"
+
+[[controls]]
+label = "Mute 4"
+control_type = "button"
+midi_type = "note"
+button_role = "mute"
+channel = 0
+number = 10
+group = 4
+section = "Buttons"
+
+[[controls]]
+label = "Rec Arm 4"
+control_type = "button"
+midi_type = "note"
+button_role = "record"
+channel = 0
+number = 9
+group = 4
+section = "Buttons"
+
+# --- Strip 5 ---
+[[controls]]
+label = "Send A 5"
+control_type = "knob"
+channel = 0
+number = 46
+group = 5
+section = "Knobs"
+
+[[controls]]
+label = "Send B 5"
+control_type = "knob"
+channel = 0
+number = 47
+group = 5
+section = "Knobs"
+
+[[controls]]
+label = "Send C 5"
+control_type = "knob"
+channel = 0
+number = 48
+group = 5
+section = "Knobs"
+
+[[controls]]
+label = "Fader 5"
+control_type = "slider"
+channel = 0
+number = 49
+group = 5
+section = "Faders"
+
+[[controls]]
+label = "Mute 5"
+control_type = "button"
+midi_type = "note"
+button_role = "mute"
+channel = 0
+number = 13
+group = 5
+section = "Buttons"
+
+[[controls]]
+label = "Rec Arm 5"
+control_type = "button"
+midi_type = "note"
+button_role = "record"
+channel = 0
+number = 12
+group = 5
+section = "Buttons"
+
+# --- Strip 6 ---
+[[controls]]
+label = "Send A 6"
+control_type = "knob"
+channel = 0
+number = 50
+group = 6
+section = "Knobs"
+
+[[controls]]
+label = "Send B 6"
+control_type = "knob"
+channel = 0
+number = 51
+group = 6
+section = "Knobs"
+
+[[controls]]
+label = "Send C 6"
+control_type = "knob"
+channel = 0
+number = 52
+group = 6
+section = "Knobs"
+
+[[controls]]
+label = "Fader 6"
+control_type = "slider"
+channel = 0
+number = 53
+group = 6
+section = "Faders"
+
+[[controls]]
+label = "Mute 6"
+control_type = "button"
+midi_type = "note"
+button_role = "mute"
+channel = 0
+number = 16
+group = 6
+section = "Buttons"
+
+[[controls]]
+label = "Rec Arm 6"
+control_type = "button"
+midi_type = "note"
+button_role = "record"
+channel = 0
+number = 15
+group = 6
+section = "Buttons"
+
+# --- Strip 7 ---
+[[controls]]
+label = "Send A 7"
+control_type = "knob"
+channel = 0
+number = 54
+group = 7
+section = "Knobs"
+
+[[controls]]
+label = "Send B 7"
+control_type = "knob"
+channel = 0
+number = 55
+group = 7
+section = "Knobs"
+
+[[controls]]
+label = "Send C 7"
+control_type = "knob"
+channel = 0
+number = 56
+group = 7
+section = "Knobs"
+
+[[controls]]
+label = "Fader 7"
+control_type = "slider"
+channel = 0
+number = 57
+group = 7
+section = "Faders"
+
+[[controls]]
+label = "Mute 7"
+control_type = "button"
+midi_type = "note"
+button_role = "mute"
+channel = 0
+number = 19
+group = 7
+section = "Buttons"
+
+[[controls]]
+label = "Rec Arm 7"
+control_type = "button"
+midi_type = "note"
+button_role = "record"
+channel = 0
+number = 18
+group = 7
+section = "Buttons"
+
+# --- Strip 8 ---
+[[controls]]
+label = "Send A 8"
+control_type = "knob"
+channel = 0
+number = 58
+group = 8
+section = "Knobs"
+
+[[controls]]
+label = "Send B 8"
+control_type = "knob"
+channel = 0
+number = 59
+group = 8
+section = "Knobs"
+
+[[controls]]
+label = "Send C 8"
+control_type = "knob"
+channel = 0
+number = 60
+group = 8
+section = "Knobs"
+
+[[controls]]
+label = "Fader 8"
+control_type = "slider"
+channel = 0
+number = 61
+group = 8
+section = "Faders"
+
+[[controls]]
+label = "Mute 8"
+control_type = "button"
+midi_type = "note"
+button_role = "mute"
+channel = 0
+number = 22
+group = 8
+section = "Buttons"
+
+[[controls]]
+label = "Rec Arm 8"
+control_type = "button"
+midi_type = "note"
+button_role = "record"
+channel = 0
+number = 21
+group = 8
+section = "Buttons"
+
+# ---------------------------------------------------------------------------
+# Master
+# ---------------------------------------------------------------------------
+[[controls]]
+label = "Master"
+control_type = "slider"
+channel = 0
+number = 62
+section = "Master"
+
+[[controls]]
+label = "Bank Left"
+control_type = "button"
+midi_type = "note"
+channel = 0
+number = 25
+section = "Transport"
+
+[[controls]]
+label = "Bank Right"
+control_type = "button"
+midi_type = "note"
+channel = 0
+number = 26
+section = "Transport"
