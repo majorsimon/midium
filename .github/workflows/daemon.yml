@@ -27,7 +27,8 @@ jobs:
             libpulse-dev
 
       - name: Build daemon
-        run: cargo build --bin midium-daemon --release
+        working-directory: crates/midium-daemon
+        run: cargo build --release
 
       - name: Test daemon help
-        run: cargo run --bin midium-daemon --release -- --help
+        run: cargo run --manifest-path crates/midium-daemon/Cargo.toml --release -- --help
