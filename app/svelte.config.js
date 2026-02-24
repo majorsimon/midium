@@ -11,6 +11,13 @@ const config = {
       fallback: "index.html",
       precompress: false,
     }),
+    prerender: {
+      handleHttpError: ({ path, referrer, message }) => {
+        // Ignore missing favicon — Tauri provides its own
+        if (path === "/favicon.png") return;
+        throw new Error(message);
+      },
+    },
   },
 };
 
