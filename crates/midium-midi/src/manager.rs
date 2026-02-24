@@ -1,8 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use midir::{MidiInput, MidiInputConnection};
+use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection, SendError};
 use tracing::{debug, error, info, warn};
 
 use midium_core::event_bus::EventBus;
@@ -18,8 +18,10 @@ pub struct MidiManager {
     profiles: Arc<Vec<DeviceProfile>>,
     /// Track which ports we've already connected to (by name).
     connected_ports: Arc<Mutex<HashSet<String>>>,
-    /// Keep connections alive — dropping them closes the port.
+    /// Keep input connections alive — dropping them closes the port.
     _connections: Arc<Mutex<Vec<MidiInputConnection<()>>>>,
+    /// Output connections keyed by port name — used for LED feedback.
+    out_connections: Arc<Mutex<HashMap<String, MidiOutputConnection>>>,
 }
 
 impl MidiManager {
@@ -30,12 +32,34 @@ impl MidiManager {
             profiles: Arc::new(profiles),
             connected_ports: Arc::new(Mutex::new(HashSet::new())),
             _connections: Arc::new(Mutex::new(Vec::new())),
+            out_connections: Arc::new(Mutex::new(HashMap::<String, MidiOutputConnection>::new())),
         }
     }
 
     /// Start the device polling loop. Runs until the EventBus signals Shutdown.
     pub async fn run(self) {
         let mut shutdown_rx = self.event_bus.subscribe();
+        let out_conns = self.out_connections.clone();
+
+        // Spawn a dedicated task that drains SendMidi events from the bus.
+        let mut midi_rx = self.event_bus.subscribe();
+        tokio::spawn(async move {
+            loop {
+                match midi_rx.recv().await {
+                    Ok(AppEvent::SendMidi { device, data }) => {
+                        let mut conns = out_conns.lock().unwrap();
+                        if let Some(conn) = conns.get_mut(&device) {
+                            if let Err(e) = conn.send(&data) {
+                                let e: SendError = e;
+                                debug!(port = %device, "MIDI output send failed: {e}");
+                            }
+                        }
+                    }
+                    Ok(AppEvent::Shutdown) | Err(_) => break,
+                    _ => {}
+                }
+            }
+        });
 
         info!(
             poll_interval = ?self.poll_interval,
@@ -48,7 +72,7 @@ impl MidiManager {
             tokio::select! {
                 _ = tokio::time::sleep(self.poll_interval) => {}
                 event = shutdown_rx.recv() => {
-                    if matches!(event, Ok(AppEvent::Shutdown)) {
+                    if matches!(event, Ok(AppEvent::Shutdown) | Err(_)) {
                         info!("MIDI manager shutting down");
                         break;
                     }
@@ -86,7 +110,7 @@ impl MidiManager {
 
             info!(port = %port_name, profile = %profile_name, "Connecting to MIDI device");
 
-            // midir requires a fresh MidiInput per connection
+            // --- Input connection ---
             let midi_in_for_port = match MidiInput::new(&format!("midium-{}", port_name)) {
                 Ok(m) => m,
                 Err(e) => {
@@ -125,7 +149,7 @@ impl MidiManager {
                 (),
             ) {
                 Ok(connection) => {
-                    debug!(port = %port_name, "MIDI device connected successfully");
+                    debug!(port = %port_name, "MIDI input connected");
                     self.event_bus.publish(AppEvent::DeviceConnected {
                         device: port_name.clone(),
                     });
@@ -133,7 +157,39 @@ impl MidiManager {
                     self._connections.lock().unwrap().push(connection);
                 }
                 Err(e) => {
-                    warn!(port = %port_name, "Failed to connect: {e}");
+                    warn!(port = %port_name, "Failed to connect MIDI input: {e}");
+                    continue;
+                }
+            }
+
+            // --- Output connection (best-effort for LED feedback) ---
+            match MidiOutput::new(&format!("midium-out-{}", port_name)) {
+                Ok(midi_out) => {
+                    let out_ports = midi_out.ports();
+                    let out_target = out_ports.iter().find(|p| {
+                        midi_out
+                            .port_name(p)
+                            .map(|n| n == port_name)
+                            .unwrap_or(false)
+                    });
+
+                    if let Some(out_port) = out_target {
+                        match midi_out.connect(out_port, &format!("midium-out-{}", port_name)) {
+                            Ok(out_conn) => {
+                                debug!(port = %port_name, "MIDI output connected");
+                                self.out_connections
+                                    .lock()
+                                    .unwrap()
+                                    .insert(port_name.clone(), out_conn);
+                            }
+                            Err(e) => {
+                                debug!(port = %port_name, "MIDI output connection failed (LED feedback unavailable): {e}");
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    debug!(port = %port_name, "Could not open MIDI output: {e}");
                 }
             }
         }

@@ -1,116 +1,399 @@
 name = "Korg nanoKONTROL2"
 match_patterns = ["nanokontrol2", "nanoKONTROL2", "nano kontrol"]
 
+# ---------------------------------------------------------------------------
+# Channel 1 (group = 1)
+# ---------------------------------------------------------------------------
 [[controls]]
 label = "Slider 1"
 control_type = "slider"
 channel = 0
 number = 0
-
-[[controls]]
-label = "Slider 2"
-control_type = "slider"
-channel = 0
-number = 1
-
-[[controls]]
-label = "Slider 3"
-control_type = "slider"
-channel = 0
-number = 2
-
-[[controls]]
-label = "Slider 4"
-control_type = "slider"
-channel = 0
-number = 3
-
-[[controls]]
-label = "Slider 5"
-control_type = "slider"
-channel = 0
-number = 4
-
-[[controls]]
-label = "Slider 6"
-control_type = "slider"
-channel = 0
-number = 5
-
-[[controls]]
-label = "Slider 7"
-control_type = "slider"
-channel = 0
-number = 6
-
-[[controls]]
-label = "Slider 8"
-control_type = "slider"
-channel = 0
-number = 7
+group = 1
 
 [[controls]]
 label = "Knob 1"
 control_type = "knob"
 channel = 0
 number = 16
+group = 1
+
+[[controls]]
+label = "Solo 1"
+control_type = "button"
+button_role = "solo"
+channel = 0
+number = 32
+group = 1
+
+[[controls]]
+label = "Mute 1"
+control_type = "button"
+button_role = "mute"
+channel = 0
+number = 48
+group = 1
+
+[[controls]]
+label = "Record 1"
+control_type = "button"
+button_role = "record"
+channel = 0
+number = 64
+group = 1
+
+# ---------------------------------------------------------------------------
+# Channel 2 (group = 2)
+# ---------------------------------------------------------------------------
+[[controls]]
+label = "Slider 2"
+control_type = "slider"
+channel = 0
+number = 1
+group = 2
 
 [[controls]]
 label = "Knob 2"
 control_type = "knob"
 channel = 0
 number = 17
+group = 2
+
+[[controls]]
+label = "Solo 2"
+control_type = "button"
+button_role = "solo"
+channel = 0
+number = 33
+group = 2
+
+[[controls]]
+label = "Mute 2"
+control_type = "button"
+button_role = "mute"
+channel = 0
+number = 49
+group = 2
+
+[[controls]]
+label = "Record 2"
+control_type = "button"
+button_role = "record"
+channel = 0
+number = 65
+group = 2
+
+# ---------------------------------------------------------------------------
+# Channel 3 (group = 3)
+# ---------------------------------------------------------------------------
+[[controls]]
+label = "Slider 3"
+control_type = "slider"
+channel = 0
+number = 2
+group = 3
 
 [[controls]]
 label = "Knob 3"
 control_type = "knob"
 channel = 0
 number = 18
+group = 3
+
+[[controls]]
+label = "Solo 3"
+control_type = "button"
+button_role = "solo"
+channel = 0
+number = 34
+group = 3
+
+[[controls]]
+label = "Mute 3"
+control_type = "button"
+button_role = "mute"
+channel = 0
+number = 50
+group = 3
+
+[[controls]]
+label = "Record 3"
+control_type = "button"
+button_role = "record"
+channel = 0
+number = 66
+group = 3
+
+# ---------------------------------------------------------------------------
+# Channel 4 (group = 4)
+# ---------------------------------------------------------------------------
+[[controls]]
+label = "Slider 4"
+control_type = "slider"
+channel = 0
+number = 3
+group = 4
 
 [[controls]]
 label = "Knob 4"
 control_type = "knob"
 channel = 0
 number = 19
+group = 4
+
+[[controls]]
+label = "Solo 4"
+control_type = "button"
+button_role = "solo"
+channel = 0
+number = 35
+group = 4
+
+[[controls]]
+label = "Mute 4"
+control_type = "button"
+button_role = "mute"
+channel = 0
+number = 51
+group = 4
+
+[[controls]]
+label = "Record 4"
+control_type = "button"
+button_role = "record"
+channel = 0
+number = 67
+group = 4
+
+# ---------------------------------------------------------------------------
+# Channel 5 (group = 5)
+# ---------------------------------------------------------------------------
+[[controls]]
+label = "Slider 5"
+control_type = "slider"
+channel = 0
+number = 4
+group = 5
 
 [[controls]]
 label = "Knob 5"
 control_type = "knob"
 channel = 0
 number = 20
+group = 5
+
+[[controls]]
+label = "Solo 5"
+control_type = "button"
+button_role = "solo"
+channel = 0
+number = 36
+group = 5
+
+[[controls]]
+label = "Mute 5"
+control_type = "button"
+button_role = "mute"
+channel = 0
+number = 52
+group = 5
+
+[[controls]]
+label = "Record 5"
+control_type = "button"
+button_role = "record"
+channel = 0
+number = 68
+group = 5
+
+# ---------------------------------------------------------------------------
+# Channel 6 (group = 6)
+# ---------------------------------------------------------------------------
+[[controls]]
+label = "Slider 6"
+control_type = "slider"
+channel = 0
+number = 5
+group = 6
 
 [[controls]]
 label = "Knob 6"
 control_type = "knob"
 channel = 0
 number = 21
+group = 6
+
+[[controls]]
+label = "Solo 6"
+control_type = "button"
+button_role = "solo"
+channel = 0
+number = 37
+group = 6
+
+[[controls]]
+label = "Mute 6"
+control_type = "button"
+button_role = "mute"
+channel = 0
+number = 53
+group = 6
+
+[[controls]]
+label = "Record 6"
+control_type = "button"
+button_role = "record"
+channel = 0
+number = 69
+group = 6
+
+# ---------------------------------------------------------------------------
+# Channel 7 (group = 7)
+# ---------------------------------------------------------------------------
+[[controls]]
+label = "Slider 7"
+control_type = "slider"
+channel = 0
+number = 6
+group = 7
 
 [[controls]]
 label = "Knob 7"
 control_type = "knob"
 channel = 0
 number = 22
+group = 7
+
+[[controls]]
+label = "Solo 7"
+control_type = "button"
+button_role = "solo"
+channel = 0
+number = 38
+group = 7
+
+[[controls]]
+label = "Mute 7"
+control_type = "button"
+button_role = "mute"
+channel = 0
+number = 54
+group = 7
+
+[[controls]]
+label = "Record 7"
+control_type = "button"
+button_role = "record"
+channel = 0
+number = 70
+group = 7
+
+# ---------------------------------------------------------------------------
+# Channel 8 (group = 8)
+# ---------------------------------------------------------------------------
+[[controls]]
+label = "Slider 8"
+control_type = "slider"
+channel = 0
+number = 7
+group = 8
 
 [[controls]]
 label = "Knob 8"
 control_type = "knob"
 channel = 0
 number = 23
+group = 8
 
 [[controls]]
-label = "Solo 1"
+label = "Solo 8"
 control_type = "button"
+button_role = "solo"
 channel = 0
-number = 32
+number = 39
+group = 8
 
 [[controls]]
-label = "Mute 1"
+label = "Mute 8"
 control_type = "button"
+button_role = "mute"
 channel = 0
-number = 48
+number = 55
+group = 8
 
 [[controls]]
-label = "Record 1"
+label = "Record 8"
+control_type = "button"
+button_role = "record"
+channel = 0
+number = 71
+group = 8
+
+# ---------------------------------------------------------------------------
+# Transport buttons (no group — not associated with a channel strip)
+# ---------------------------------------------------------------------------
+[[controls]]
+label = "Rewind"
 control_type = "button"
 channel = 0
-number = 64
+number = 43
+
+[[controls]]
+label = "Fast Forward"
+control_type = "button"
+channel = 0
+number = 44
+
+[[controls]]
+label = "Stop"
+control_type = "button"
+channel = 0
+number = 42
+
+[[controls]]
+label = "Play"
+control_type = "button"
+channel = 0
+number = 41
+
+[[controls]]
+label = "Record"
+control_type = "button"
+channel = 0
+number = 45
+
+[[controls]]
+label = "Cycle"
+control_type = "button"
+channel = 0
+number = 46
+
+[[controls]]
+label = "Track Prev"
+control_type = "button"
+channel = 0
+number = 58
+
+[[controls]]
+label = "Track Next"
+control_type = "button"
+channel = 0
+number = 59
+
+[[controls]]
+label = "Marker Set"
+control_type = "button"
+channel = 0
+number = 60
+
+[[controls]]
+label = "Marker Prev"
+control_type = "button"
+channel = 0
+number = 61
+
+[[controls]]
+label = "Marker Next"
+control_type = "button"
+channel = 0
+number = 62

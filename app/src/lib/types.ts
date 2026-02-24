@@ -73,6 +73,30 @@ export interface MidiEvent {
   message: MidiMessage;
 }
 
+// ---------------------------------------------------------------------------
+// Device profiles (for LED feedback)
+// ---------------------------------------------------------------------------
+
+export type ProfileControlType = "slider" | "knob" | "button" | "encoder";
+export type ButtonRole = "solo" | "mute" | "record";
+
+export interface ProfileControl {
+  label: string;
+  control_type: ProfileControlType;
+  channel: number;
+  number: number;
+  min_value?: number;
+  max_value?: number;
+  group?: number;
+  button_role?: ButtonRole;
+}
+
+export interface DeviceProfile {
+  name: string;
+  match_patterns: string[];
+  controls: ProfileControl[];
+}
+
 // Helper: human-readable label for a ControlId
 export function controlLabel(c: ControlId): string {
   const ct = c.control_type;

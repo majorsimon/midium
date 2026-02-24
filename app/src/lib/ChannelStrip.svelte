@@ -3,7 +3,7 @@
 
   /** Display name for this strip */
   export let label: string = "";
-  /** Current volume (0–1) */
+  /** Current volume (0–1) — updated by parent when external changes occur */
   export let volume: number = 1.0;
   /** Mute state (M button) */
   export let muted: boolean = false;
@@ -26,6 +26,17 @@
   }>();
 
   $: live = (assigned || isMaster) && !unavailable;
+
+  // Local copy for the range binding.
+  // Syncs from the parent prop whenever we're not actively dragging,
+  // so external volume changes (from macOS or other sources) are reflected.
+  let localVol = volume;
+  let dragging = false;
+  $: if (!dragging) localVol = volume;
+
+  function handleInput() {
+    dispatch("volume-change", localVol);
+  }
 </script>
 
 <div class="strip" class:muted class:dim={!assigned && !isMaster}>
@@ -42,9 +53,11 @@
         class:muted
         class:unavail={unavailable}
         type="range" min="0" max="1" step="0.005"
-        value={volume}
+        bind:value={localVol}
         disabled={unavailable}
-        on:input={(e) => dispatch("volume-change", +e.currentTarget.value)}
+        on:pointerdown={() => dragging = true}
+        on:pointerup={() => { dragging = false; localVol = localVol; }}
+        on:input={handleInput}
       />
     {:else}
       <div class="fader-empty"></div>

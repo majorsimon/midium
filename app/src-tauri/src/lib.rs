@@ -16,7 +16,7 @@ use midium_core::{
     mapping::MappingEngine,
     types::{AppEvent, AudioTarget, MidiEvent},
 };
-use midium_midi::{manager::MidiManager, profile::load_profiles};
+use midium_midi::{manager::MidiManager, profile::load_profiles, DeviceProfile};
 use midium_plugins::{PluginInfo, PluginManager};
 
 // ---------------------------------------------------------------------------
@@ -58,6 +58,8 @@ pub struct AppState {
     pub midi_learn_tx: Arc<Mutex<Option<oneshot::Sender<MidiEvent>>>>,
     /// Snapshot of loaded plugin info (populated at startup).
     pub plugin_list: Arc<Mutex<Vec<PluginInfo>>>,
+    /// Loaded device profiles (exposed to frontend for LED feedback mapping).
+    pub profiles: Arc<Vec<DeviceProfile>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -171,6 +173,17 @@ fn list_plugins(state: State<AppState>) -> Vec<PluginInfo> {
     state.plugin_list.lock().unwrap().clone()
 }
 
+#[tauri::command]
+fn list_profiles(state: State<AppState>) -> Vec<DeviceProfile> {
+    (*state.profiles).clone()
+}
+
+#[tauri::command]
+fn send_midi(state: State<AppState>, device: String, data: Vec<u8>) -> Result<(), String> {
+    state.event_bus.publish(midium_core::types::AppEvent::SendMidi { device, data });
+    Ok(())
+}
+
 fn persist_mappings(config: &MappingsConfig) -> Result<(), String> {
     std::fs::create_dir_all(config_dir()).map_err(|e| e.to_string())?;
     let content = toml::to_string(config).map_err(|e| e.to_string())?;
@@ -281,6 +294,8 @@ pub fn run() {
             let plugin_list =
                 PluginManager::spawn(plugin_dirs, audio.clone(), event_bus.clone());
 
+            let profiles_arc = Arc::new(profiles);
+
             app.manage(AppState {
                 event_bus: event_bus.clone(),
                 audio: audio.clone(),
@@ -290,6 +305,7 @@ pub fn run() {
                 app_config: Arc::new(Mutex::new(app_config.clone())),
                 midi_learn_tx: midi_learn_tx.clone(),
                 plugin_list: Arc::new(Mutex::new(plugin_list)),
+                profiles: profiles_arc.clone(),
             });
 
             setup_tray(app)?;
@@ -306,8 +322,9 @@ pub fn run() {
             // Spawn MIDI manager
             let bus_midi = event_bus.clone();
             let poll = app_config.midi.poll_interval_secs;
+            let profiles_for_midi = (*profiles_arc).clone();
             tauri::async_runtime::spawn(async move {
-                MidiManager::new(bus_midi, poll, profiles).run().await;
+                MidiManager::new(bus_midi, poll, profiles_for_midi).run().await;
             });
 
             // EventBus → Tauri event bridge
@@ -368,6 +385,8 @@ pub fn run() {
             get_config,
             save_config,
             list_plugins,
+            list_profiles,
+            send_midi,
         ])
         .run(tauri::generate_context!())
         .expect("error running midium");

@@ -23,6 +23,13 @@ pub struct ProfileControl {
     pub min_value: u8,
     #[serde(default = "default_max")]
     pub max_value: u8,
+    /// Groups related controls on the same physical channel strip together.
+    /// Controls with the same group index belong to the same channel.
+    #[serde(default)]
+    pub group: Option<u8>,
+    /// Role of this button within its channel group (buttons only).
+    #[serde(default)]
+    pub button_role: Option<ButtonRole>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,6 +39,19 @@ pub enum ProfileControlType {
     Knob,
     Button,
     Encoder,
+}
+
+/// The functional role of a button within its channel strip group.
+/// Used to route LED feedback to the correct button.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ButtonRole {
+    /// S (solo/assign) button — lit when the strip has an assigned target.
+    Solo,
+    /// M (mute) button — lit when the strip target is muted.
+    Mute,
+    /// R (record/active) button — lit when the strip target is producing audio.
+    Record,
 }
 
 fn default_max() -> u8 {

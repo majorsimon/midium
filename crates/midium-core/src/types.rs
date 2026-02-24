@@ -194,6 +194,11 @@ pub enum AppEvent {
         action: Action,
         value: f64,
     },
+    /// Request the MIDI manager to send raw bytes to a device output port.
+    SendMidi {
+        device: String,
+        data: Vec<u8>,
+    },
     Shutdown,
 }
 

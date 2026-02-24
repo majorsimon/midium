@@ -3,7 +3,13 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import ChannelStrip from "./ChannelStrip.svelte";
-  import type { AudioDeviceInfo, AudioSessionInfo, AudioCapabilities } from "./types";
+  import type {
+    AudioDeviceInfo,
+    AudioSessionInfo,
+    AudioCapabilities,
+    Mapping,
+    DeviceProfile,
+  } from "./types";
 
   const NUM_STRIPS = 8;
   const ASSIGNMENTS_KEY = "midium-strip-assignments";
@@ -26,7 +32,6 @@
         }
       }
     } catch {}
-    // Default: strip 0 → master, rest unassigned
     const defaults: StripTarget[] = Array(NUM_STRIPS).fill(null);
     defaults[0] = "master";
     return defaults;
@@ -34,13 +39,6 @@
 
   function saveAssignments() {
     try { localStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(strips)); } catch {}
-  }
-
-  function assignStrip(i: number, target: StripTarget) {
-    strips[i] = target;
-    strips = [...strips];
-    saveAssignments();
-    pickerOpen = null;
   }
 
   // ---------------------------------------------------------------------------
@@ -58,30 +56,41 @@
   };
 
   // ---------------------------------------------------------------------------
+  // Profile + mapping state (for LED feedback)
+  // ---------------------------------------------------------------------------
+
+  let profiles: DeviceProfile[] = [];
+  let mappings: Mapping[] = [];
+
+  // ---------------------------------------------------------------------------
+  // Reactive strip data — explicit dependencies so Svelte tracks them correctly
+  // ---------------------------------------------------------------------------
+
+  $: stripVolumes = strips.map(target => {
+    if (!target) return 0;
+    if (target === "master") return masterVolume;
+    return sessions.find(s => s.name === (target as { app: string }).app)?.volume ?? 0.8;
+  });
+
+  $: stripMuted = strips.map(target => {
+    if (!target || target === "master") return masterMuted;
+    return sessions.find(s => s.name === (target as { app: string }).app)?.muted ?? false;
+  });
+
+  $: stripActive = strips.map(target => {
+    if (!target) return false;
+    if (target === "master") return true;
+    return sessions.some(s => s.name === (target as { app: string }).app);
+  });
+
+  // ---------------------------------------------------------------------------
   // Strip helpers
   // ---------------------------------------------------------------------------
 
   function getLabel(target: StripTarget): string {
     if (!target) return "";
     if (target === "master") return "Master";
-    return target.app;
-  }
-
-  function getVolume(target: StripTarget): number {
-    if (!target) return 0;
-    if (target === "master") return masterVolume;
-    return sessions.find(s => s.name === target.app)?.volume ?? 0.8;
-  }
-
-  function getMuted(target: StripTarget): boolean {
-    if (!target || target === "master") return masterMuted;
-    return sessions.find(s => s.name === target.app)?.muted ?? false;
-  }
-
-  function isActive(target: StripTarget): boolean {
-    if (!target) return false;
-    if (target === "master") return true;
-    return sessions.some(s => s.name === target.app);
+    return (target as { app: string }).app;
   }
 
   function isUnavailable(target: StripTarget): boolean {
@@ -89,13 +98,103 @@
     return !caps.per_app_volume;
   }
 
-  function isAppAssigned(target: StripTarget, appName: string): boolean {
-    return (
-      target !== null &&
-      typeof target === "object" &&
-      "app" in target &&
-      (target as { app: string }).app === appName
+  // ---------------------------------------------------------------------------
+  // LED feedback helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Find the MIDI device+CC for a strip's S/M/R button.
+   *
+   * Algorithm:
+   * 1. Find the SetVolume mapping whose target matches the strip target
+   * 2. Get the CC number from that mapping (= the physical fader CC)
+   * 3. Look up the matching device profile
+   * 4. Find the profile control with that CC → get its group
+   * 5. Find the button with the desired role in the same group
+   */
+  function findLedTarget(
+    target: StripTarget,
+    role: "solo" | "mute" | "record"
+  ): { device: string; channel: number; cc: number } | null {
+    if (!target) return null;
+
+    // Find the fader mapping for this target
+    const faderMapping = mappings.find(m => {
+      if (typeof m.action === "string") return false;
+      if (!("SetVolume" in m.action)) return false;
+      const t = m.action.SetVolume.target;
+      if (target === "master") return t === "SystemMaster";
+      const appName = (target as { app: string }).app;
+      return (
+        typeof t === "object" &&
+        "Application" in t &&
+        t.Application.name === appName
+      );
+    });
+    if (!faderMapping) return null;
+
+    const ctType = faderMapping.control.control_type;
+    if (typeof ctType !== "object" || !("CC" in ctType)) return null;
+    const faderCC = (ctType as { CC: number }).CC;
+    const faderCh = faderMapping.control.channel;
+
+    // Find matching profile
+    const profile = profiles.find(p =>
+      p.match_patterns.some(pat =>
+        faderMapping.control.device.toLowerCase().includes(pat.toLowerCase())
+      )
     );
+    if (!profile) return null;
+
+    // Find the slider control in this profile that matches fader CC + channel
+    const faderControl = profile.controls.find(c =>
+      c.number === faderCC &&
+      c.channel === faderCh &&
+      c.control_type === "slider"
+    );
+    if (!faderControl?.group) return null;
+
+    // Find the button with the matching role in the same group
+    const buttonControl = profile.controls.find(c =>
+      c.group === faderControl.group && c.button_role === role
+    );
+    if (!buttonControl) return null;
+
+    return {
+      device: faderMapping.control.device,
+      channel: buttonControl.channel,
+      cc: buttonControl.number,
+    };
+  }
+
+  async function sendLed(
+    target: StripTarget,
+    role: "solo" | "mute" | "record",
+    on: boolean
+  ) {
+    const led = findLedTarget(target, role);
+    if (!led) return;
+    const data = [0xB0 | led.channel, led.cc, on ? 127 : 0];
+    await invoke("send_midi", { device: led.device, data }).catch(() => {});
+  }
+
+  async function syncStripLeds(i: number) {
+    const t = strips[i];
+    const assigned = t !== null;
+    const muted = stripMuted[i];
+    const active = stripActive[i];
+
+    await Promise.all([
+      sendLed(t, "solo",   assigned),
+      sendLed(t, "mute",   muted),
+      sendLed(t, "record", active),
+    ]);
+  }
+
+  async function syncAllLeds() {
+    for (let i = 0; i < NUM_STRIPS; i++) {
+      await syncStripLeds(i);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -109,11 +208,10 @@
       masterVolume = v;
       await invoke("set_volume", { target: "SystemMaster", volume: v }).catch(console.error);
     } else {
-      sessions = sessions.map(s =>
-        s.name === (t as { app: string }).app ? { ...s, volume: v } : s
-      );
+      const appName = (t as { app: string }).app;
+      sessions = sessions.map(s => s.name === appName ? { ...s, volume: v } : s);
       await invoke("set_volume", {
-        target: { Application: { name: (t as { app: string }).app } },
+        target: { Application: { name: appName } },
         volume: v,
       }).catch(console.error);
     }
@@ -127,28 +225,46 @@
       await invoke("toggle_mute", { target: "SystemMaster" }).catch(console.error);
     } else {
       const appName = (t as { app: string }).app;
-      sessions = sessions.map(s =>
-        s.name === appName ? { ...s, muted: !s.muted } : s
-      );
+      sessions = sessions.map(s => s.name === appName ? { ...s, muted: !s.muted } : s);
       await invoke("toggle_mute", {
         target: { Application: { name: appName } },
       }).catch(console.error);
     }
-  }
-
-  async function setDefaultOutput(id: string) {
-    await invoke("set_default_output", { deviceId: id }).catch(console.error);
-    devices = await invoke<AudioDeviceInfo[]>("list_output_devices").catch(() => devices);
+    // Update M LED immediately
+    await sendLed(t, "mute", stripMuted[i]);
   }
 
   // ---------------------------------------------------------------------------
-  // Picker state
+  // Assignment picker
   // ---------------------------------------------------------------------------
 
   let pickerOpen: number | null = null;
 
   function togglePicker(i: number) {
     pickerOpen = pickerOpen === i ? null : i;
+  }
+
+  async function assignStrip(i: number, target: StripTarget) {
+    strips[i] = target;
+    strips = [...strips];
+    saveAssignments();
+    pickerOpen = null;
+    // Update LEDs for this strip after re-assignment
+    await syncStripLeds(i);
+  }
+
+  function isAppAssigned(target: StripTarget, appName: string): boolean {
+    return (
+      target !== null &&
+      typeof target === "object" &&
+      "app" in target &&
+      (target as { app: string }).app === appName
+    );
+  }
+
+  async function setDefaultOutput(id: string) {
+    await invoke("set_default_output", { deviceId: id }).catch(console.error);
+    devices = await invoke<AudioDeviceInfo[]>("list_output_devices").catch(() => devices);
   }
 
   // ---------------------------------------------------------------------------
@@ -174,11 +290,23 @@
   onMount(async () => {
     await loadState();
 
+    // Load profiles and mappings for LED feedback
+    [profiles, mappings] = await Promise.all([
+      invoke<DeviceProfile[]>("list_profiles").catch(() => []),
+      invoke<Mapping[]>("get_mappings").catch(() => []),
+    ]);
+
+    // Push current LED state to controller on startup
+    await syncAllLeds();
+
     refreshTimer = setInterval(async () => {
       masterVolume = await invoke<number>("get_volume", { target: "SystemMaster" })
         .catch(() => masterVolume);
       if (caps.per_app_volume) {
+        const prev = sessions;
         sessions = await invoke<AudioSessionInfo[]>("list_sessions").catch(() => sessions);
+        // Re-sync R LEDs when sessions change
+        if (sessions !== prev) await syncAllLeds();
       }
     }, 3000);
 
@@ -186,7 +314,11 @@
       await listen<{ target: unknown; volume: number }>("volume-changed", (e) => {
         if (e.payload.target === "SystemMaster") masterVolume = e.payload.volume;
       }),
-      await listen<string>("device-connected", () => loadState()),
+      await listen<string>("device-connected", async () => {
+        await loadState();
+        // Re-sync all LEDs when a new device connects
+        await syncAllLeds();
+      }),
       await listen<string>("device-disconnected", () => loadState()),
     );
   });
@@ -198,14 +330,14 @@
 </script>
 
 <div class="mixer">
-  <!-- Channel strips row -->
+  <!-- Channel strips -->
   <div class="strips-row">
     {#each strips as target, i}
       <ChannelStrip
         label={getLabel(target)}
-        volume={getVolume(target)}
-        muted={getMuted(target)}
-        active={isActive(target)}
+        volume={stripVolumes[i]}
+        muted={stripMuted[i]}
+        active={stripActive[i]}
         assigned={target !== null}
         isMaster={target === "master"}
         unavailable={isUnavailable(target)}
@@ -225,7 +357,6 @@
       </div>
 
       <div class="picker-list">
-        <!-- Master option -->
         <button
           class="picker-opt"
           class:current={strips[idx] === "master"}
@@ -234,7 +365,6 @@
           Master {strips[idx] === "master" ? "✓" : ""}
         </button>
 
-        <!-- App sessions -->
         {#each sessions as s}
           <button
             class="picker-opt"
@@ -256,7 +386,6 @@
           </div>
         {/if}
 
-        <!-- Unassign -->
         {#if strips[idx] !== null}
           <button
             class="picker-opt danger"
@@ -283,11 +412,10 @@
     </div>
   {/if}
 
-  <!-- Platform note when per-app is unavailable -->
   {#if !caps.per_app_volume}
     <div class="platform-note">
       Per-app volume requires the macOS Audio Tap API (14.2+) — coming soon.
-      Master volume control is fully functional.
+      Master volume control is fully functional. MIDI LED feedback is active.
     </div>
   {/if}
 </div>
@@ -300,7 +428,6 @@
     gap: 0;
   }
 
-  /* ---- Strips row ---- */
   .strips-row {
     display: flex;
     gap: 8px;
@@ -308,7 +435,6 @@
     padding-bottom: 6px;
   }
 
-  /* ---- Picker ---- */
   .picker-card {
     margin-top: 16px;
     max-width: 480px;
@@ -332,19 +458,16 @@
     transition: background 0.1s, border-color 0.1s;
     white-space: nowrap;
   }
-
   .picker-opt:hover {
     background: color-mix(in srgb, var(--accent) 12%, var(--surface2));
     border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
   }
-
   .picker-opt.current {
     background: color-mix(in srgb, var(--accent) 18%, var(--surface2));
     border-color: var(--accent);
     color: var(--accent);
     font-weight: 600;
   }
-
   .picker-opt.danger {
     color: var(--danger);
     border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
@@ -372,23 +495,19 @@
   }
   .picker-close:hover { color: var(--text); }
 
-  /* ---- Device row ---- */
   .device-row {
     display: flex;
     align-items: center;
     gap: 12px;
     margin-top: 16px;
   }
-
   .device-label {
     font-size: 12px;
     color: var(--text-muted);
     white-space: nowrap;
   }
-
   .device-row select { flex: 1; }
 
-  /* ---- Platform note ---- */
   .platform-note {
     margin-top: 16px;
     font-size: 11px;
