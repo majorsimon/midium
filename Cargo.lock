@@ -2019,8 +2019,10 @@ name = "midium-plugins"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "midium-audio",
  "midium-core",
  "mlua",
+ "serde",
  "tokio",
  "tracing",
 ]

@@ -5,7 +5,9 @@ edition.workspace = true
 
 [dependencies]
 midium-core = { workspace = true }
+midium-audio = { path = "../midium-audio" }
 mlua = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
+serde = { workspace = true }

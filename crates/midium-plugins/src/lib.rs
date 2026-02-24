@@ -1,3 +1,3 @@
 pub mod runtime;
 
-pub use runtime::PluginManager;
+pub use runtime::{PluginInfo, PluginManager, RegisteredAction};

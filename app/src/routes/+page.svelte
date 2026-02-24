@@ -5,9 +5,10 @@
   import Mixer from "$lib/Mixer.svelte";
   import MappingEditor from "$lib/MappingEditor.svelte";
   import Settings from "$lib/Settings.svelte";
+  import PluginManager from "$lib/PluginManager.svelte";
   import type { MidiEvent } from "$lib/types";
 
-  type Tab = "mixer" | "mappings" | "settings";
+  type Tab = "mixer" | "mappings" | "settings" | "plugins";
   let activeTab: Tab = "mixer";
 
   let connectedDevices: string[] = [];
@@ -73,6 +74,9 @@
       <button class:active={activeTab === "mappings"} on:click={() => activeTab = "mappings"}>
         <span class="nav-icon">⚡</span> Mappings
       </button>
+      <button class:active={activeTab === "plugins"} on:click={() => activeTab = "plugins"}>
+        <span class="nav-icon">🧩</span> Plugins
+      </button>
       <button class:active={activeTab === "settings"} on:click={() => activeTab = "settings"}>
         <span class="nav-icon">⚙</span> Settings
       </button>
@@ -110,6 +114,8 @@
       <Mixer />
     {:else if activeTab === "mappings"}
       <MappingEditor />
+    {:else if activeTab === "plugins"}
+      <PluginManager />
     {:else}
       <Settings />
     {/if}

@@ -17,6 +17,7 @@ use midium_core::{
     types::{AppEvent, AudioTarget, MidiEvent},
 };
 use midium_midi::{manager::MidiManager, profile::load_profiles};
+use midium_plugins::{PluginInfo, PluginManager};
 
 // ---------------------------------------------------------------------------
 // Shared audio adapter
@@ -55,6 +56,8 @@ pub struct AppState {
     pub app_config: Arc<Mutex<AppConfig>>,
     /// When Some, the next MIDI event is forwarded for MIDI Learn.
     pub midi_learn_tx: Arc<Mutex<Option<oneshot::Sender<MidiEvent>>>>,
+    /// Snapshot of loaded plugin info (populated at startup).
+    pub plugin_list: Arc<Mutex<Vec<PluginInfo>>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +166,11 @@ fn delete_mapping(
     persist_mappings(&config)
 }
 
+#[tauri::command]
+fn list_plugins(state: State<AppState>) -> Vec<PluginInfo> {
+    state.plugin_list.lock().unwrap().clone()
+}
+
 fn persist_mappings(config: &MappingsConfig) -> Result<(), String> {
     std::fs::create_dir_all(config_dir()).map_err(|e| e.to_string())?;
     let content = toml::to_string(config).map_err(|e| e.to_string())?;
@@ -253,6 +261,26 @@ pub fn run() {
             let midi_learn_tx: Arc<Mutex<Option<oneshot::Sender<MidiEvent>>>> =
                 Arc::new(Mutex::new(None));
 
+            // Load plugins from: ./plugins/ → ../../plugins/ → exe_dir/plugins/ → config_dir/plugins/
+            let plugin_dirs: Vec<std::path::PathBuf> = {
+                let mut dirs = vec![
+                    std::path::PathBuf::from("plugins"),
+                    std::path::PathBuf::from("../../plugins"),
+                ];
+                if let Ok(exe) = std::env::current_exe() {
+                    if let Some(parent) = exe.parent() {
+                        dirs.push(parent.join("plugins"));
+                    }
+                }
+                dirs.push(config_dir().join("plugins"));
+                dirs
+            };
+
+            // Spawn plugin system on its own thread (mlua::Lua is !Send).
+            // Returns plugin info after on_load completes.
+            let plugin_list =
+                PluginManager::spawn(plugin_dirs, audio.clone(), event_bus.clone());
+
             app.manage(AppState {
                 event_bus: event_bus.clone(),
                 audio: audio.clone(),
@@ -261,6 +289,7 @@ pub fn run() {
                 mappings_config: Arc::new(Mutex::new(mappings_config)),
                 app_config: Arc::new(Mutex::new(app_config.clone())),
                 midi_learn_tx: midi_learn_tx.clone(),
+                plugin_list: Arc::new(Mutex::new(plugin_list)),
             });
 
             setup_tray(app)?;
@@ -338,6 +367,7 @@ pub fn run() {
             cancel_midi_learn,
             get_config,
             save_config,
+            list_plugins,
         ])
         .run(tauri::generate_context!())
         .expect("error running midium");

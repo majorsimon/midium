@@ -57,7 +57,9 @@ impl ActionDispatcher {
                     self.dispatch(a, value);
                 }
             }
-            // Shortcuts, media keys, plugins — Phase 4/5
+            // Handled by PluginManager's own EventBus subscription
+            Action::RunPluginAction { .. } => {}
+            // Shortcuts / media keys — Phase 5
             other => {
                 warn!(?other, "Action not yet implemented");
             }
