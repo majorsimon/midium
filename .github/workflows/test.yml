@@ -29,6 +29,7 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
+            libxdo-dev \
             patchelf
 
       - name: Cache cargo registry
