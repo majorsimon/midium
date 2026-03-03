@@ -50,13 +50,7 @@ jobs:
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run cargo test
-        run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            cargo test --workspace --features audio-windows
-          else
-            cargo test --workspace
-          fi
-        shell: bash
+        run: cargo test --workspace
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

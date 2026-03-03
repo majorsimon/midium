@@ -3,11 +3,6 @@ name = "midium-audio"
 version.workspace = true
 edition.workspace = true
 
-[features]
-# Enable Windows WASAPI audio backend. Requires windows crate bindings.
-# Can be disabled for cross-platform CI builds on non-Windows targets.
-audio-windows = []
-
 [dependencies]
 midium-core = { workspace = true }
 tokio = { workspace = true }
