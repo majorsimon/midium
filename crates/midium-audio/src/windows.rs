@@ -1,10 +1,14 @@
+use windows::core::Interface;
+use windows::Win32::Foundation::BOOL;
 use windows::Win32::Media::Audio::{
     eCapture, eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator,
     DEVICE_STATE_ACTIVE,
 };
+use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
 };
+use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
 
 use tracing::{debug, warn};
 
@@ -12,6 +16,17 @@ use midium_core::dispatch::VolumeControl;
 use midium_core::types::{AudioCapabilities, AudioDeviceInfo, AudioSessionInfo, AudioTarget};
 
 use crate::backend::AudioBackend;
+
+// PKEY_Device_FriendlyName: {a45c254e-df1c-4efd-8020-67d146a850e0}, pid 14
+const PKEY_DEVICE_FRIENDLY_NAME: windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY =
+    windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY {
+        fmtid: windows::core::GUID::from_u128(
+            0xa45c254e_df1c_4efd_8020_67d146a850e0,
+        ),
+        pid: 14,
+    };
+
+const STGM_READ: u32 = 0;
 
 pub struct WasapiBackend;
 
@@ -34,13 +49,12 @@ impl WasapiBackend {
 
     fn device_name(device: &windows::Win32::Media::Audio::IMMDevice) -> String {
         use windows::Win32::System::Com::StructuredStorage::PropVariantToStringAlloc;
-        use windows::Win32::UI::Shell::PropertiesSystem::PKEY_Device_FriendlyName;
         unsafe {
             let store = device.OpenPropertyStore(
-                windows::Win32::System::Com::StructuredStorage::STGM_READ,
+                windows::Win32::System::Com::StructuredStorage::STGM(STGM_READ),
             );
             if let Ok(store) = store {
-                if let Ok(prop) = store.GetValue(&PKEY_Device_FriendlyName) {
+                if let Ok(prop) = store.GetValue(&PKEY_DEVICE_FRIENDLY_NAME) {
                     if let Ok(s) = PropVariantToStringAlloc(&prop) {
                         return s.to_string().unwrap_or_default();
                     }
@@ -51,11 +65,11 @@ impl WasapiBackend {
     }
 
     fn endpoint_volume(device: &windows::Win32::Media::Audio::IMMDevice)
-        -> anyhow::Result<windows::Win32::Media::Audio::IAudioEndpointVolume>
+        -> anyhow::Result<IAudioEndpointVolume>
     {
         unsafe {
             device
-                .Activate::<windows::Win32::Media::Audio::IAudioEndpointVolume>(
+                .Activate::<IAudioEndpointVolume>(
                     CLSCTX_ALL,
                     None,
                 )
@@ -125,7 +139,7 @@ impl VolumeControl for WasapiBackend {
                 .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
         };
         let ep_vol = Self::endpoint_volume(&device)?;
-        let muted = unsafe {
+        let muted: BOOL = unsafe {
             ep_vol
                 .GetMute()
                 .map_err(|e| anyhow::anyhow!("GetMute: {e}"))?
@@ -134,8 +148,6 @@ impl VolumeControl for WasapiBackend {
     }
 
     fn set_default_output(&self, device_id: &str) -> anyhow::Result<()> {
-        // Requires IPolicyConfig (undocumented COM interface).
-        // Stubbed for now — device switching via IPolicyConfig will be added in Phase 5.
         warn!(device_id, "Default output switching not yet implemented on Windows (IPolicyConfig required)");
         Ok(())
     }
@@ -198,7 +210,7 @@ impl AudioBackend for WasapiBackend {
             };
             devices.push(AudioDeviceInfo {
                 name: Self::device_name(&device),
-                is_default: false, // would need separate check for default capture
+                is_default: false,
                 id,
                 is_input: true,
             });
@@ -255,9 +267,8 @@ impl AudioBackend for WasapiBackend {
                     .GetSession(i)
                     .map_err(|e| anyhow::anyhow!("GetSession: {e}"))?
             };
-            let session_ctrl2: windows::Win32::Media::Audio::IAudioSessionControl2 = unsafe {
-                session_ctrl.cast().map_err(|e| anyhow::anyhow!("cast IAudioSessionControl2: {e}"))?
-            };
+            let session_ctrl2: windows::Win32::Media::Audio::IAudioSessionControl2 =
+                session_ctrl.cast().map_err(|e| anyhow::anyhow!("cast IAudioSessionControl2: {e}"))?;
 
             let display_name = unsafe {
                 session_ctrl
@@ -269,21 +280,20 @@ impl AudioBackend for WasapiBackend {
 
             let pid = unsafe { session_ctrl2.GetProcessId().ok() };
 
-            let simple_vol: windows::Win32::Media::Audio::ISimpleAudioVolume = unsafe {
-                session_ctrl.cast().map_err(|e| anyhow::anyhow!("cast ISimpleAudioVolume: {e}"))?
-            };
+            let simple_vol: windows::Win32::Media::Audio::ISimpleAudioVolume =
+                session_ctrl.cast().map_err(|e| anyhow::anyhow!("cast ISimpleAudioVolume: {e}"))?;
             let volume = unsafe {
                 simple_vol.GetMasterVolume().unwrap_or(0.0) as f64
             };
-            let muted = unsafe {
-                simple_vol.GetMute().map(|b| b.as_bool()).unwrap_or(false)
+            let muted: BOOL = unsafe {
+                simple_vol.GetMute().unwrap_or(BOOL(0))
             };
 
             sessions.push(AudioSessionInfo {
                 name: display_name,
                 pid,
                 volume,
-                muted,
+                muted: muted.as_bool(),
             });
         }
         Ok(sessions)
@@ -292,7 +302,7 @@ impl AudioBackend for WasapiBackend {
     fn capabilities(&self) -> AudioCapabilities {
         AudioCapabilities {
             per_app_volume: true,
-            device_switching: false, // IPolicyConfig deferred to Phase 5
+            device_switching: false,
             input_device_switching: false,
         }
     }
@@ -340,11 +350,8 @@ fn set_session_volume_by_name(
                 .unwrap_or_default()
         };
         if display_name.to_lowercase().contains(&name_lower) {
-            let simple_vol: windows::Win32::Media::Audio::ISimpleAudioVolume = unsafe {
-                session_ctrl
-                    .cast()
-                    .map_err(|e| anyhow::anyhow!("cast ISimpleAudioVolume: {e}"))?
-            };
+            let simple_vol: windows::Win32::Media::Audio::ISimpleAudioVolume =
+                session_ctrl.cast().map_err(|e| anyhow::anyhow!("cast ISimpleAudioVolume: {e}"))?;
             unsafe {
                 simple_vol
                     .SetMasterVolume(volume as f32, std::ptr::null())
