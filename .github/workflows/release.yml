@@ -52,7 +52,13 @@ jobs:
 
       - name: Build app with Tauri
         working-directory: app
-        run: npm run tauri build
+        run: |
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            npm run tauri build -- --features audio-windows
+          else
+            npm run tauri build
+          fi
+        shell: bash
 
       - name: Upload macOS DMG
         if: matrix.platform == 'macos'

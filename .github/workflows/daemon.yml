@@ -28,7 +28,19 @@ jobs:
 
       - name: Build daemon
         working-directory: crates/midium-daemon
-        run: cargo build --release
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cargo build --release --features audio-windows
+          else
+            cargo build --release
+          fi
+        shell: bash
 
       - name: Test daemon help
-        run: cargo run --manifest-path crates/midium-daemon/Cargo.toml --release -- --help
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cargo run --manifest-path crates/midium-daemon/Cargo.toml --release --features audio-windows -- --help
+          else
+            cargo run --manifest-path crates/midium-daemon/Cargo.toml --release -- --help
+          fi
+        shell: bash

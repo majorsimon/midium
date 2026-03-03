@@ -6,7 +6,7 @@ pub mod macos;
 #[cfg(target_os = "linux")]
 pub mod linux;
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", feature = "audio-windows"))]
 pub mod windows;
 
 pub use backend::AudioBackend;
@@ -21,9 +21,13 @@ pub fn create_backend() -> anyhow::Result<Box<dyn AudioBackend>> {
     {
         Ok(Box::new(linux::PulseAudioBackend::new()?))
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(all(target_os = "windows", feature = "audio-windows"))]
     {
         Ok(Box::new(windows::WasapiBackend::new()?))
+    }
+    #[cfg(all(target_os = "windows", not(feature = "audio-windows")))]
+    {
+        anyhow::bail!("Windows audio backend not enabled. Build with --features audio-windows")
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
