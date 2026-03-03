@@ -8,7 +8,7 @@ use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
 };
-use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
+use windows::Win32::System::Com::StructuredStorage::STGM;
 
 use tracing::{debug, warn};
 
@@ -26,7 +26,7 @@ const PKEY_DEVICE_FRIENDLY_NAME: windows::Win32::UI::Shell::PropertiesSystem::PR
         pid: 14,
     };
 
-const STGM_READ: u32 = 0;
+const STGM_READ: STGM = STGM(0);
 
 pub struct WasapiBackend;
 
@@ -51,7 +51,7 @@ impl WasapiBackend {
         use windows::Win32::System::Com::StructuredStorage::PropVariantToStringAlloc;
         unsafe {
             let store = device.OpenPropertyStore(
-                windows::Win32::System::Com::StructuredStorage::STGM(STGM_READ),
+                STGM_READ,
             );
             if let Ok(store) = store {
                 if let Ok(prop) = store.GetValue(&PKEY_DEVICE_FRIENDLY_NAME) {
@@ -115,7 +115,7 @@ impl VolumeControl for WasapiBackend {
         }
     }
 
-    fn set_mute(&self, target: &AudioTarget, muted: bool) -> anyhow::Result<()> {
+    fn set_mute(&self, _target: &AudioTarget, muted: bool) -> anyhow::Result<()> {
         let enumerator = Self::enumerator()?;
         let device = unsafe {
             enumerator
