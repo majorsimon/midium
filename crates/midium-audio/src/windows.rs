@@ -8,7 +8,7 @@ use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
 };
-use windows::Win32::System::Com::StructuredStorage::STGM;
+use windows::Win32::Storage::StructuredStorage::STGM;
 
 use tracing::{debug, warn};
 
