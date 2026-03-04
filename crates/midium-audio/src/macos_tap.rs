@@ -161,11 +161,22 @@ impl AudioTapManager {
 
         for &proc_obj_id in &process_ids {
             let pid = get_process_pid(proc_obj_id);
-            let name = get_process_bundle_id(proc_obj_id)
-                .unwrap_or_else(|| format!("PID {}", pid.unwrap_or(0)));
+            let bundle_id = get_process_bundle_id(proc_obj_id);
+
+            // Resolve human-readable name: prefer NSRunningApplication.localizedName,
+            // fall back to bundle ID, skip entries with neither.
+            let name = match &bundle_id {
+                Some(bid) => localized_app_name(bid).unwrap_or_else(|| bid.clone()),
+                None => continue, // system/unnamed process — skip
+            };
+
+            if name.trim().is_empty() {
+                continue;
+            }
 
             // Check if we have a tap for this process (to report current volume)
-            let (volume, muted) = if let Some(tap) = taps.get(&name) {
+            let tap_key = bundle_id.as_deref().unwrap_or(&name);
+            let (volume, muted) = if let Some(tap) = taps.get(tap_key) {
                 let vol = f64::from_bits(tap.volume.load(Ordering::Relaxed));
                 let m = f64::from_bits(tap.muted.load(Ordering::Relaxed)) > 0.5;
                 (vol, m)
@@ -630,6 +641,59 @@ fn install_volume_io_proc(
     }
 
     Ok(io_proc_id)
+}
+
+/// Resolve a bundle ID to the app's localised display name via NSRunningApplication.
+/// Returns None if the app isn't currently running or has no localized name.
+fn localized_app_name(bundle_id: &str) -> Option<String> {
+    unsafe {
+        let class = AnyClass::get(c"NSRunningApplication")?;
+
+        // Build an NSString from the bundle ID
+        let _ns_string_class = AnyClass::get(c"NSString")?;
+        let cf_str = cfstring_from_str(bundle_id);
+        // Toll-free bridge CFStringRef → NSString
+        let ns_bundle_id = cf_str as *mut AnyObject;
+
+        // [NSRunningApplication runningApplicationsWithBundleIdentifier:bundleId]
+        let apps: *mut AnyObject = msg_send![
+            class,
+            runningApplicationsWithBundleIdentifier: ns_bundle_id
+        ];
+
+        CFRelease(cf_str as *const _);
+
+        if apps.is_null() {
+            return None;
+        }
+
+        // Check count
+        let count: usize = msg_send![apps, count];
+        if count == 0 {
+            return None;
+        }
+
+        // Get first element
+        let app: *mut AnyObject = msg_send![apps, objectAtIndex: 0usize];
+        if app.is_null() {
+            return None;
+        }
+
+        // [app localizedName] returns NSString*
+        let ns_name: *mut AnyObject = msg_send![app, localizedName];
+        if ns_name.is_null() {
+            return None;
+        }
+
+        // Extract UTF-8 from NSString via toll-free bridge to CFString
+        let cf_name = ns_name as CFStringRef;
+        let name = cfstring_to_string(cf_name);
+        if name.is_empty() || name == "(unknown)" {
+            None
+        } else {
+            Some(name)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
