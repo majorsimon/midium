@@ -116,19 +116,28 @@ jobs:
         working-directory: app
         run: npm run tauri build -- --bundles msi,nsis
 
-      - name: Upload Windows MSI
+      - name: Stage Windows artifacts
         if: matrix.platform == 'windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-msi
-          path: ${{ github.workspace }}\target\release\bundle\msi\*.msi
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\staging"
+          # Find only bundle outputs — explicitly exclude build/ and deps/ directories
+          $msi = Get-ChildItem -Recurse -Filter "*.msi" |
+            Where-Object { $_.FullName -match "\\bundle\\msi\\" } |
+            Select-Object -First 1
+          $exe = Get-ChildItem -Recurse -Filter "*.exe" |
+            Where-Object { $_.FullName -match "\\bundle\\nsis\\" } |
+            Select-Object -First 1
+          if ($msi) { Copy-Item $msi.FullName "$env:GITHUB_WORKSPACE\staging\" ; Write-Host "Staged: $($msi.Name)" }
+          if ($exe) { Copy-Item $exe.FullName "$env:GITHUB_WORKSPACE\staging\" ; Write-Host "Staged: $($exe.Name)" }
+          Get-ChildItem "$env:GITHUB_WORKSPACE\staging"
 
-      - name: Upload Windows installer
+      - name: Upload Windows artifacts
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
-          name: windows-nsis
-          path: ${{ github.workspace }}\target\release\bundle\nsis\*.exe
+          name: windows
+          path: ${{ github.workspace }}/staging/
 
   release:
     needs: build
