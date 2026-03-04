@@ -2,28 +2,23 @@
 
 ## macOS
 
-### Basic installation
+> **Midium is not yet notarized with Apple.** Two extra steps are needed on
+> macOS: bypassing Gatekeeper on first launch, and applying a self-signature
+> so that per-app volume control works. Both are covered below.
+
+### 1. Download and install
 
 1. Download `Midium_<version>_macos.app.zip` from the [latest release](https://github.com/majorsimon/midium/releases/latest)
 2. Unzip it (double-click in Finder, or `unzip Midium_*.app.zip`)
-3. Move `Midium.app` to your Applications folder
-4. **First launch:** right-click `Midium.app` → **Open** → click **Open** in the dialog
+3. Move `Midium.app` to your **Applications** folder
 
-   > Midium is not yet notarized with Apple. Right-clicking bypasses the Gatekeeper
-   > warning for unsigned apps. After the first launch you can open it normally.
+### 2. Self-sign for per-app volume (required)
 
-### Per-app volume control (macOS 14.2 Sonoma or later)
-
-Per-app volume requires the app to have audio capture permission, which in turn
-requires the app to be signed with the `com.apple.security.device.audio-input`
-entitlement. Until Midium has a Developer ID certificate (notarization), you can
-apply an **ad-hoc signature** yourself — this stays local to your machine and is
-safe to do.
-
-**One-time setup (paste into Terminal):**
+Per-app volume control requires the audio-input entitlement, which requires
+the app to be signed. Run this once in Terminal after installing (and again
+after each update):
 
 ```bash
-# 1. Sign the app with the audio-input entitlement
 curl -fsSL https://raw.githubusercontent.com/majorsimon/midium/main/app/src-tauri/Entitlements.plist \
   -o /tmp/Midium-Entitlements.plist
 
@@ -32,17 +27,28 @@ codesign --deep --force \
   --options runtime \
   --entitlements /tmp/Midium-Entitlements.plist \
   /Applications/Midium.app
-
-# 2. Clear any cached permission decision and launch
-tccutil reset Microphone com.midium.app
-open /Applications/Midium.app
 ```
 
-When Midium opens, macOS will prompt for microphone/audio access — click **Allow**.
-The Running Apps list in the Targets dropdown will then populate.
+### 3. First launch
 
-> **Note:** You need to re-run the `codesign` step after every update since a new
-> download replaces the signature.
+Right-click `Midium.app` in Applications → **Open** → click **Open** in the
+dialog. (This one-time step is needed because the app isn't notarized.)
+
+When Midium opens, macOS will prompt for **microphone/audio access** — click
+**Allow**. Running apps will then appear in the Targets dropdown.
+
+> After the first launch you can open Midium normally (double-click).
+
+---
+
+## Windows
+
+1. Download `Midium_<version>_x64-setup.exe` (NSIS) or `Midium_<version>_x64_en-US.msi`
+2. Run the installer
+3. If Windows SmartScreen shows a warning: click **More info** → **Run anyway**
+
+   > Midium is not yet code-signed with an EV certificate. Per-app volume
+   > control works out of the box — no extra steps needed.
 
 ---
 
@@ -55,34 +61,15 @@ chmod +x Midium_*.AppImage
 ./Midium_*.AppImage
 ```
 
-Or move it to `~/.local/bin/` and create a desktop shortcut.
-
-**PulseAudio / PipeWire:** Per-app volume uses the default PulseAudio sink. Make
-sure `pulseaudio` or `pipewire-pulse` is running (`pactl info` should return
-without error).
-
 ### Debian / Ubuntu (.deb)
 
 ```bash
 sudo dpkg -i midium_*.deb
-# Fix any missing dependencies:
-sudo apt-get install -f
+sudo apt-get install -f   # fix any missing dependencies
 ```
 
-Then launch from your application menu or run `midium-app`.
-
----
-
-## Windows
-
-1. Download `Midium_<version>_x64-setup.exe` (NSIS installer) or `Midium_<version>_x64_en-US.msi`
-2. Run the installer
-3. If Windows SmartScreen shows a warning, click **More info** → **Run anyway**
-
-   > Midium is not yet code-signed with an EV certificate. SmartScreen warns on
-   > unsigned installers; this will be resolved in a future release.
-
-Per-app volume works out of the box on Windows — no extra setup needed.
+**PulseAudio / PipeWire:** make sure `pulseaudio` or `pipewire-pulse` is
+running (`pactl info` should return without error).
 
 ---
 
@@ -94,5 +81,3 @@ cd midium/app
 npm ci
 npm run tauri build
 ```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full dev setup instructions.

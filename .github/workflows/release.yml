@@ -27,8 +27,6 @@ jobs:
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "'app/src-tauri -> target'"
 
       - name: Install Linux dependencies
         if: matrix.platform == 'linux'
@@ -55,104 +53,82 @@ jobs:
         working-directory: app
         run: npm ci
 
-      - name: Build (macOS)
+      # ── macOS ────────────────────────────────────────────────────────────
+      - name: Build macOS app + DMG (DMG is best-effort)
         if: matrix.platform == 'macos'
         working-directory: app
         run: npm run tauri build -- --bundles app,dmg
-        # Build .app and DMG separately; DMG is best-effort (bundle_dmg.sh can
-        # time out in CI). We always upload the zipped .app as a fallback.
         continue-on-error: true
 
-      - name: Build .app only (macOS fallback)
+      - name: Build macOS app (ensure .app exists even if DMG failed)
         if: matrix.platform == 'macos'
         working-directory: app
         run: npm run tauri build -- --bundles app
 
-      - name: Build (Linux)
-        if: matrix.platform == 'linux'
-        working-directory: app
-        run: npm run tauri build -- --bundles appimage,deb
-
-      - name: Build (Windows)
-        if: matrix.platform == 'windows'
-        working-directory: app
-        run: npm run tauri build -- --bundles msi,nsis
-
-      # ── macOS artifacts ──────────────────────────────────────────────────
-      - name: Zip macOS .app
+      - name: Zip and upload macOS .app
         if: matrix.platform == 'macos'
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          # Locate the .app — it lands in the workspace-root target dir
-          APP_BUNDLE=$(find . -name "Midium.app" -type d 2>/dev/null | head -1)
-          if [ -z "$APP_BUNDLE" ]; then
-            echo "ERROR: Midium.app not found after build"
-            find . -name "*.app" -type d 2>/dev/null || true
-            exit 1
-          fi
-          BUNDLE_DIR=$(dirname "$APP_BUNDLE")
-          ZIP_NAME="Midium_${VERSION}_macos.app.zip"
-          cd "$BUNDLE_DIR"
-          zip -r --symlinks "$ZIP_NAME" Midium.app
-          echo "APP_ZIP=${BUNDLE_DIR}/${ZIP_NAME}" >> "$GITHUB_ENV"
+          APP=$(find "$GITHUB_WORKSPACE" -name "Midium.app" -type d | head -1)
+          [ -z "$APP" ] && { echo "Midium.app not found"; exit 1; }
+          ZIP="$GITHUB_WORKSPACE/Midium_${VERSION}_macos.app.zip"
+          cd "$(dirname "$APP")"
+          zip -r --symlinks "$ZIP" Midium.app
 
       - name: Upload macOS .app.zip
         if: matrix.platform == 'macos'
         uses: actions/upload-artifact@v4
         with:
           name: macos-app
-          path: ${{ env.APP_ZIP }}
+          path: ${{ github.workspace }}/Midium_*_macos.app.zip
 
       - name: Upload macOS DMG
         if: matrix.platform == 'macos'
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: target/release/bundle/dmg/*.dmg
-          if-no-files-found: ignore   # DMG is best-effort
+          path: ${{ github.workspace }}/target/release/bundle/dmg/*.dmg
+          if-no-files-found: ignore
 
-      # ── Linux artifacts ──────────────────────────────────────────────────
-      - name: Locate Linux bundles
+      # ── Linux ────────────────────────────────────────────────────────────
+      - name: Build Linux bundles
         if: matrix.platform == 'linux'
-        run: |
-          echo "APPIMAGE=$(find . -path '*/bundle/appimage/*.AppImage' | head -1)" >> "$GITHUB_ENV"
-          echo "DEB=$(find . -path '*/bundle/deb/*.deb' | head -1)" >> "$GITHUB_ENV"
+        working-directory: app
+        run: npm run tauri build -- --bundles appimage,deb
 
       - name: Upload Linux AppImage
         if: matrix.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
-          path: ${{ env.APPIMAGE }}
+          path: ${{ github.workspace }}/target/release/bundle/appimage/*.AppImage
 
       - name: Upload Linux .deb
         if: matrix.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: linux-deb
-          path: ${{ env.DEB }}
+          path: ${{ github.workspace }}/target/release/bundle/deb/*.deb
 
-      # ── Windows artifacts ────────────────────────────────────────────────
-      - name: Locate Windows bundles
+      # ── Windows ──────────────────────────────────────────────────────────
+      - name: Build Windows bundles
         if: matrix.platform == 'windows'
-        shell: bash
-        run: |
-          echo "MSI=$(find . -path '*/bundle/msi/*.msi' | head -1)" >> "$GITHUB_ENV"
-          echo "NSIS=$(find . -path '*/bundle/nsis/*.exe' | head -1)" >> "$GITHUB_ENV"
+        working-directory: app
+        run: npm run tauri build -- --bundles msi,nsis
 
       - name: Upload Windows MSI
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: windows-msi
-          path: ${{ env.MSI }}
+          path: ${{ github.workspace }}\target\release\bundle\msi\*.msi
 
       - name: Upload Windows installer
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: windows-nsis
-          path: ${{ env.NSIS }}
+          path: ${{ github.workspace }}\target\release\bundle\nsis\*.exe
 
   release:
     needs: build
@@ -167,12 +143,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-          merge-multiple: false
+          merge-multiple: true   # flatten into a single dir for upload
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: artifacts/*
           generate_release_notes: true
           body_path: .github/RELEASE_NOTES_TEMPLATE.md
         env:
