@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use libpulse_binding as pa;
@@ -90,17 +88,13 @@ impl PulseConn {
         let result_c = result.clone();
 
         self.mainloop.lock();
-        let ctx = unsafe {
-            // SAFETY: we hold the mainloop lock
-            self._context.clone()
-        };
-        let introspect = ctx.introspect();
+        let introspect = self._context.introspect();
 
         let op = introspect.get_sink_info_list(move |item| {
             if let pa::callbacks::ListResult::Item(info) = item {
                 if let Ok(mut guard) = result_c.lock() {
                     if let Some(v) = guard.as_mut() {
-                        v.push(info.clone().into_owned());
+                        v.push(info.clone().to_owned());
                     }
                 }
             }
@@ -114,7 +108,8 @@ impl PulseConn {
         }
         self.mainloop.unlock();
 
-        Ok(result.lock().unwrap().take().unwrap_or_default())
+        let items = result.lock().unwrap().take().unwrap_or_default();
+        Ok(items)
     }
 
     fn list_sources(
@@ -124,14 +119,13 @@ impl PulseConn {
         let result_c = result.clone();
 
         self.mainloop.lock();
-        let ctx = unsafe { self._context.clone() };
-        let introspect = ctx.introspect();
+        let introspect = self._context.introspect();
 
         let op = introspect.get_source_info_list(move |item| {
             if let pa::callbacks::ListResult::Item(info) = item {
                 if let Ok(mut guard) = result_c.lock() {
                     if let Some(v) = guard.as_mut() {
-                        v.push(info.clone().into_owned());
+                        v.push(info.clone().to_owned());
                     }
                 }
             }
@@ -145,7 +139,8 @@ impl PulseConn {
         }
         self.mainloop.unlock();
 
-        Ok(result.lock().unwrap().take().unwrap_or_default())
+        let items = result.lock().unwrap().take().unwrap_or_default();
+        Ok(items)
     }
 
     fn list_sink_inputs(
@@ -155,14 +150,13 @@ impl PulseConn {
         let result_c = result.clone();
 
         self.mainloop.lock();
-        let ctx = unsafe { self._context.clone() };
-        let introspect = ctx.introspect();
+        let introspect = self._context.introspect();
 
         let op = introspect.get_sink_input_info_list(move |item| {
             if let pa::callbacks::ListResult::Item(info) = item {
                 if let Ok(mut guard) = result_c.lock() {
                     if let Some(v) = guard.as_mut() {
-                        v.push(info.clone().into_owned());
+                        v.push(info.clone().to_owned());
                     }
                 }
             }
@@ -176,13 +170,13 @@ impl PulseConn {
         }
         self.mainloop.unlock();
 
-        Ok(result.lock().unwrap().take().unwrap_or_default())
+        let items = result.lock().unwrap().take().unwrap_or_default();
+        Ok(items)
     }
 
     fn set_sink_volume_by_name(&mut self, name: &str, cvols: &ChannelVolumes) -> anyhow::Result<()> {
         self.mainloop.lock();
-        let ctx = unsafe { self._context.clone() };
-        let mut introspect = ctx.introspect();
+        let mut introspect = self._context.introspect();
 
         let op = introspect.set_sink_volume_by_name(name, cvols, None);
         loop {
@@ -197,8 +191,7 @@ impl PulseConn {
 
     fn set_sink_input_volume(&mut self, index: u32, cvols: &ChannelVolumes) -> anyhow::Result<()> {
         self.mainloop.lock();
-        let ctx = unsafe { self._context.clone() };
-        let mut introspect = ctx.introspect();
+        let mut introspect = self._context.introspect();
 
         let op = introspect.set_sink_input_volume(index, cvols, None);
         loop {
@@ -213,8 +206,7 @@ impl PulseConn {
 
     fn set_sink_mute_by_name(&mut self, name: &str, mute: bool) -> anyhow::Result<()> {
         self.mainloop.lock();
-        let ctx = unsafe { self._context.clone() };
-        let mut introspect = ctx.introspect();
+        let mut introspect = self._context.introspect();
 
         let op = introspect.set_sink_mute_by_name(name, mute, None);
         loop {
@@ -233,11 +225,10 @@ impl PulseConn {
         let result_c = result.clone();
 
         self.mainloop.lock();
-        let ctx = unsafe { self._context.clone() };
-        let introspect = ctx.introspect();
+        let introspect = self._context.introspect();
 
-        let op = introspect.get_server_info(move |info| {
-            *result_c.lock().unwrap() = Some(info.clone().into_owned());
+        let op = introspect.get_server_info(move |info: &pa::context::introspect::ServerInfo<'_>| {
+            *result_c.lock().unwrap() = Some(info.clone().to_owned());
         });
 
         loop {
@@ -248,11 +239,12 @@ impl PulseConn {
         }
         self.mainloop.unlock();
 
-        result
+        let info = result
             .lock()
             .unwrap()
             .take()
-            .ok_or_else(|| anyhow::anyhow!("Failed to get server info"))
+            .ok_or_else(|| anyhow::anyhow!("Failed to get server info"))?;
+        Ok(info)
     }
 }
 

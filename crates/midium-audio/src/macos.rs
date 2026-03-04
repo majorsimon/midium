@@ -8,13 +8,23 @@ use midium_core::dispatch::VolumeControl;
 use midium_core::types::{AudioCapabilities, AudioDeviceInfo, AudioSessionInfo, AudioTarget};
 
 use crate::backend::AudioBackend;
+use crate::macos_tap::{self, AudioTapManager};
 
-pub struct CoreAudioBackend;
+pub struct CoreAudioBackend {
+    tap_manager: Option<AudioTapManager>,
+}
 
 impl CoreAudioBackend {
     pub fn new() -> anyhow::Result<Self> {
+        let tap_manager = if macos_tap::supports_audio_taps() {
+            debug!("macOS 14.2+ detected — enabling per-app volume via Audio Tap API");
+            Some(AudioTapManager::new())
+        } else {
+            debug!("macOS < 14.2 — per-app volume not available");
+            None
+        };
         debug!("CoreAudio backend initialized");
-        Ok(Self)
+        Ok(Self { tap_manager })
     }
 
     /// Get the default output device ID.
@@ -387,7 +397,8 @@ impl CoreAudioBackend {
                     .map_err(|_| anyhow::anyhow!("Invalid device ID: {id}"))
             }
             AudioTarget::Application { .. } | AudioTarget::FocusedApplication => {
-                anyhow::bail!("Per-application volume is not supported on macOS")
+                // Per-app targets are handled separately via the tap manager
+                anyhow::bail!("Per-application volume requires Audio Tap API (macOS 14.2+)")
             }
         }
     }
@@ -395,16 +406,36 @@ impl CoreAudioBackend {
 
 impl VolumeControl for CoreAudioBackend {
     fn set_volume(&self, target: &AudioTarget, volume: f64) -> anyhow::Result<()> {
+        if let AudioTarget::Application { name } = target {
+            if let Some(ref mgr) = self.tap_manager {
+                mgr.set_process_volume(name, volume);
+                return Ok(());
+            }
+            anyhow::bail!("Per-app volume not available (requires macOS 14.2+)");
+        }
         let device_id = Self::resolve_device_id(target)?;
         Self::set_device_volume(device_id, volume as f32)
     }
 
     fn set_mute(&self, target: &AudioTarget, muted: bool) -> anyhow::Result<()> {
+        if let AudioTarget::Application { name } = target {
+            if let Some(ref mgr) = self.tap_manager {
+                mgr.set_process_mute(name, muted);
+                return Ok(());
+            }
+            anyhow::bail!("Per-app volume not available (requires macOS 14.2+)");
+        }
         let device_id = Self::resolve_device_id(target)?;
         Self::set_device_mute(device_id, muted)
     }
 
     fn is_muted(&self, target: &AudioTarget) -> anyhow::Result<bool> {
+        if let AudioTarget::Application { name } = target {
+            if let Some(ref mgr) = self.tap_manager {
+                return Ok(mgr.is_process_muted(name));
+            }
+            anyhow::bail!("Per-app volume not available (requires macOS 14.2+)");
+        }
         let device_id = Self::resolve_device_id(target)?;
         Self::get_device_mute(device_id)
     }
@@ -432,18 +463,26 @@ impl AudioBackend for CoreAudioBackend {
     }
 
     fn get_volume(&self, target: &AudioTarget) -> anyhow::Result<f64> {
+        if let AudioTarget::Application { name } = target {
+            if let Some(ref mgr) = self.tap_manager {
+                return Ok(mgr.get_process_volume(name));
+            }
+            anyhow::bail!("Per-app volume not available (requires macOS 14.2+)");
+        }
         let device_id = Self::resolve_device_id(target)?;
         Self::get_device_volume(device_id)
     }
 
     fn list_sessions(&self) -> anyhow::Result<Vec<AudioSessionInfo>> {
-        // Per-app volume not available on macOS via public API
+        if let Some(ref mgr) = self.tap_manager {
+            return Ok(mgr.enumerate_audio_processes());
+        }
         Ok(Vec::new())
     }
 
     fn capabilities(&self) -> AudioCapabilities {
         AudioCapabilities {
-            per_app_volume: false,
+            per_app_volume: macos_tap::supports_audio_taps(),
             device_switching: true,
             input_device_switching: true,
         }

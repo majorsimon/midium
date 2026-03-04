@@ -362,6 +362,45 @@ The daemon loads the same config/mappings format and runs the full MIDI→audio 
 
 ---
 
+## CI/CD & Releases
+
+Automated builds and releases are handled via GitHub Actions. Three workflows run on every push/PR:
+
+1. **Test** (`.github/workflows/test.yml`) — runs on all platforms
+   - `cargo test --workspace`
+   - `svelte-check`
+   - **Triggers**: push to `main`/`master`, all PRs
+
+2. **Daemon Build** (`.github/workflows/daemon.yml`) — validates headless binary
+   - `cargo build --bin midium-daemon --release`
+   - Runs on macOS, Linux, Windows
+   - **Triggers**: push to `main`/`master`, all PRs
+
+3. **Release** (`.github/workflows/release.yml`) — builds and bundles for distribution
+   - Runs on all platforms in parallel
+   - Builds macOS: `.dmg` + `.app`
+   - Builds Linux: `.AppImage` + `.deb`
+   - Builds Windows: `.msi` + `.exe`
+   - **Triggers**: tag push (e.g., `git tag v0.1.0 && git push --tags`)
+   - Creates GitHub Release with all platform artifacts
+
+### Creating a release
+
+```bash
+# Bump version in Cargo.toml and app/src-tauri/tauri.conf.json
+# Commit changes
+git add Cargo.toml app/src-tauri/tauri.conf.json
+git commit -m "chore: bump version to v0.1.0"
+
+# Create tag and push
+git tag v0.1.0
+git push origin main --tags
+```
+
+GitHub Actions will automatically build, package, and create a GitHub Release with all installers attached.
+
+---
+
 ## Contributing
 
 Contributions are welcome. A few notes:

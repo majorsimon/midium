@@ -2045,6 +2045,8 @@ dependencies = [
  "coreaudio-sys",
  "libpulse-binding",
  "midium-core",
+ "objc2 0.6.3",
+ "objc2-foundation",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
