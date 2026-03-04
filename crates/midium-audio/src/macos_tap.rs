@@ -24,13 +24,14 @@ use midium_core::types::AudioSessionInfo;
 // ---------------------------------------------------------------------------
 
 // Property selectors not yet in coreaudio-sys
+// Verified against CoreAudio/AudioHardware.h from the macOS SDK
 const KAUDIO_HARDWARE_PROPERTY_PROCESS_OBJECT_LIST: AudioObjectPropertySelector =
-    u32::from_be_bytes(*b"prol");
+    u32::from_be_bytes(*b"prs#");
 const KAUDIO_TAP_PROPERTY_UUID: AudioObjectPropertySelector =
     u32::from_be_bytes(*b"tuid");
 const KAUDIO_AGGREGATE_DEVICE_TAP_LIST_KEY: &str = "tapl";
 
-// Process object properties
+// Process object properties (from AudioHardware.h)
 const KAUDIO_PROCESS_PROPERTY_PID: AudioObjectPropertySelector =
     u32::from_be_bytes(*b"ppid");
 const KAUDIO_PROCESS_PROPERTY_BUNDLE_ID: AudioObjectPropertySelector =
