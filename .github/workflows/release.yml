@@ -108,38 +108,51 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: "**/*.dmg"
+          path: target/release/bundle/dmg/*.dmg
           if-no-files-found: ignore   # DMG is best-effort
 
       # ── Linux artifacts ──────────────────────────────────────────────────
+      - name: Locate Linux bundles
+        if: matrix.platform == 'linux'
+        run: |
+          echo "APPIMAGE=$(find . -path '*/bundle/appimage/*.AppImage' | head -1)" >> "$GITHUB_ENV"
+          echo "DEB=$(find . -path '*/bundle/deb/*.deb' | head -1)" >> "$GITHUB_ENV"
+
       - name: Upload Linux AppImage
         if: matrix.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
-          path: "**/*.AppImage"
+          path: ${{ env.APPIMAGE }}
 
       - name: Upload Linux .deb
         if: matrix.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: linux-deb
-          path: "**/*.deb"
+          path: ${{ env.DEB }}
 
       # ── Windows artifacts ────────────────────────────────────────────────
+      - name: Locate Windows bundles
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          echo "MSI=$(find . -path '*/bundle/msi/*.msi' | head -1)" >> "$GITHUB_ENV"
+          echo "NSIS=$(find . -path '*/bundle/nsis/*.exe' | head -1)" >> "$GITHUB_ENV"
+
       - name: Upload Windows MSI
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: windows-msi
-          path: "**/*.msi"
+          path: ${{ env.MSI }}
 
       - name: Upload Windows installer
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: windows-nsis
-          path: "**/*.exe"
+          path: ${{ env.NSIS }}
 
   release:
     needs: build
