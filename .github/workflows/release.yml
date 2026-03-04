@@ -83,11 +83,18 @@ jobs:
         if: matrix.platform == 'macos'
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          cd app/src-tauri/target/release/bundle/macos
-          zip -r --symlinks \
-            "Midium_${VERSION}_macos.app.zip" \
-            Midium.app
-          echo "APP_ZIP=app/src-tauri/target/release/bundle/macos/Midium_${VERSION}_macos.app.zip" >> "$GITHUB_ENV"
+          # Locate the .app — it lands in the workspace-root target dir
+          APP_BUNDLE=$(find . -name "Midium.app" -type d 2>/dev/null | head -1)
+          if [ -z "$APP_BUNDLE" ]; then
+            echo "ERROR: Midium.app not found after build"
+            find . -name "*.app" -type d 2>/dev/null || true
+            exit 1
+          fi
+          BUNDLE_DIR=$(dirname "$APP_BUNDLE")
+          ZIP_NAME="Midium_${VERSION}_macos.app.zip"
+          cd "$BUNDLE_DIR"
+          zip -r --symlinks "$ZIP_NAME" Midium.app
+          echo "APP_ZIP=${BUNDLE_DIR}/${ZIP_NAME}" >> "$GITHUB_ENV"
 
       - name: Upload macOS .app.zip
         if: matrix.platform == 'macos'
@@ -101,7 +108,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: app/src-tauri/target/release/bundle/dmg/*.dmg
+          path: "**/*.dmg"
           if-no-files-found: ignore   # DMG is best-effort
 
       # ── Linux artifacts ──────────────────────────────────────────────────
@@ -110,14 +117,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
-          path: app/src-tauri/target/release/bundle/appimage/*.AppImage
+          path: "**/*.AppImage"
 
       - name: Upload Linux .deb
         if: matrix.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: linux-deb
-          path: app/src-tauri/target/release/bundle/deb/*.deb
+          path: "**/*.deb"
 
       # ── Windows artifacts ────────────────────────────────────────────────
       - name: Upload Windows MSI
@@ -125,14 +132,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-msi
-          path: app/src-tauri/target/release/bundle/msi/*.msi
+          path: "**/*.msi"
 
       - name: Upload Windows installer
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: windows-nsis
-          path: app/src-tauri/target/release/bundle/nsis/*.exe
+          path: "**/*.exe"
 
   release:
     needs: build
