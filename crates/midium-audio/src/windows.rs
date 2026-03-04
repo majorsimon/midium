@@ -6,9 +6,8 @@ use windows::Win32::Media::Audio::{
 };
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
+    CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED, STGM_READ,
 };
-use windows::Win32::Storage::StructuredStorage::STGM;
 
 use tracing::{debug, warn};
 
@@ -26,7 +25,6 @@ const PKEY_DEVICE_FRIENDLY_NAME: windows::Win32::UI::Shell::PropertiesSystem::PR
         pid: 14,
     };
 
-const STGM_READ: STGM = STGM(0);
 
 pub struct WasapiBackend;
 
