@@ -428,21 +428,48 @@ impl AudioBackend for WasapiBackend {
 
 /// Set the given endpoint as the default for all three roles (Console,
 /// Multimedia, Communications) using the undocumented IPolicyConfig interface.
+///
+/// IPolicyConfig is not part of the public Windows SDK. It has worked reliably
+/// from Vista through Windows 11, but Microsoft provides no stability guarantee.
+/// If a Windows update breaks this interface, `set_default_output` and
+/// `set_default_input` will return errors and device switching from the tray /
+/// CycleOutputDevices action will stop working.
 fn set_default_endpoint(device_id: &str) -> anyhow::Result<()> {
     let id_wide: Vec<u16> = device_id.encode_utf16().chain(Some(0)).collect();
     unsafe {
-        let policy: IPolicyConfig = CoCreateInstance(
+        let policy: IPolicyConfig = match CoCreateInstance(
             &CLSID_POLICY_CONFIG_CLIENT,
             None,
             CLSCTX_ALL,
-        )
-        .map_err(|e| anyhow::anyhow!("CoCreateInstance IPolicyConfig: {e}"))?;
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to create IPolicyConfig COM object. This uses an undocumented \
+                     Windows API — a Windows update may have removed it. Device switching \
+                     will not work."
+                );
+                anyhow::bail!(
+                    "Cannot switch default audio device: IPolicyConfig unavailable ({e}). \
+                     This is a known limitation on some Windows configurations."
+                );
+            }
+        };
 
         for role in [eConsole, eMultimedia, eCommunications] {
-            policy
+            if let Err(e) = policy
                 .set_default_endpoint_role(PCWSTR(id_wide.as_ptr()), role)
                 .ok()
-                .map_err(|e| anyhow::anyhow!("SetDefaultEndpoint: {e}"))?;
+            {
+                tracing::warn!(
+                    role = ?role,
+                    error = %e,
+                    device_id,
+                    "IPolicyConfig.SetDefaultEndpoint failed for role"
+                );
+                anyhow::bail!("SetDefaultEndpoint failed for device '{device_id}': {e}");
+            }
         }
     }
     Ok(())

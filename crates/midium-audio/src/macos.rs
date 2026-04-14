@@ -1,17 +1,25 @@
+use std::ffi::c_void;
 use std::mem;
 use std::ptr;
+use std::sync::Mutex;
 
 use coreaudio_sys::*;
 use tracing::{debug, warn};
 
 use midium_core::dispatch::VolumeControl;
-use midium_core::types::{AudioCapabilities, AudioDeviceInfo, AudioSessionInfo, AudioTarget};
+use midium_core::event_bus::EventBus;
+use midium_core::types::{
+    AppEvent, AudioCapabilities, AudioDeviceInfo, AudioSessionInfo, AudioTarget,
+};
 
 use crate::backend::AudioBackend;
 use crate::macos_tap::{self, AudioTapManager};
 
 pub struct CoreAudioBackend {
     tap_manager: Option<AudioTapManager>,
+    /// EventBus for push-based volume/mute change notifications.
+    /// Set via `register_event_bus()` after construction.
+    event_bus: Mutex<Option<EventBus>>,
 }
 
 impl CoreAudioBackend {
@@ -24,7 +32,10 @@ impl CoreAudioBackend {
             None
         };
         debug!("CoreAudio backend initialized");
-        Ok(Self { tap_manager })
+        Ok(Self {
+            tap_manager,
+            event_bus: Mutex::new(None),
+        })
     }
 
     /// Get the default output device ID.
@@ -196,8 +207,7 @@ impl CoreAudioBackend {
         status == 0 && size > 0
     }
 
-    /// Get volume for a specific device ID.
-    fn get_device_volume(device_id: AudioObjectID) -> anyhow::Result<f64> {
+    pub(crate) fn get_device_volume(device_id: AudioObjectID) -> anyhow::Result<f64> {
         // Try the master channel first, then channel 1
         for channel in [kAudioObjectPropertyElementMain, 1] {
             let address = AudioObjectPropertyAddress {
@@ -276,8 +286,7 @@ impl CoreAudioBackend {
         Ok(())
     }
 
-    /// Get mute state for a device.
-    fn get_device_mute(device_id: AudioObjectID) -> anyhow::Result<bool> {
+    pub(crate) fn get_device_mute(device_id: AudioObjectID) -> anyhow::Result<bool> {
         let address = AudioObjectPropertyAddress {
             mSelector: kAudioDevicePropertyMute,
             mScope: kAudioDevicePropertyScopeOutput,
@@ -493,34 +502,129 @@ impl AudioBackend for CoreAudioBackend {
             input_device_switching: true,
         }
     }
-}
 
-// ---------------------------------------------------------------------------
-// CFString helper
-// ---------------------------------------------------------------------------
+    fn register_event_bus(&self, event_bus: EventBus) {
+        *self.event_bus.lock().unwrap() = Some(event_bus.clone());
 
-unsafe fn cfstring_to_string(cf_ref: CFStringRef) -> String {
-    let c_ptr = CFStringGetCStringPtr(cf_ref, kCFStringEncodingUTF8);
-    if !c_ptr.is_null() {
-        return std::ffi::CStr::from_ptr(c_ptr)
-            .to_string_lossy()
-            .into_owned();
-    }
+        if let Ok(device_id) = Self::default_output_device() {
+            install_volume_listener(device_id, event_bus.clone());
+            install_mute_listener(device_id, event_bus.clone());
+        }
 
-    // Fallback: CFStringGetCStringPtr can return null
-    let len = CFStringGetLength(cf_ref);
-    let max_size = CFStringGetMaximumSizeForEncoding(len, kCFStringEncodingUTF8) + 1;
-    let mut buf = vec![0u8; max_size as usize];
-    let success = CFStringGetCString(
-        cf_ref,
-        buf.as_mut_ptr() as *mut _,
-        max_size,
-        kCFStringEncodingUTF8,
-    );
-    if success != 0 {
-        let cstr = std::ffi::CStr::from_ptr(buf.as_ptr() as *const _);
-        cstr.to_string_lossy().into_owned()
-    } else {
-        String::from("(unknown)")
+        install_default_device_listener(event_bus);
     }
 }
+
+/// Context passed to CoreAudio property listener callbacks.
+struct ListenerContext {
+    event_bus: EventBus,
+}
+
+fn install_volume_listener(device_id: AudioObjectID, event_bus: EventBus) {
+    let address = AudioObjectPropertyAddress {
+        mSelector: kAudioDevicePropertyVolumeScalar,
+        mScope: kAudioDevicePropertyScopeOutput,
+        mElement: kAudioObjectPropertyElementMain,
+    };
+
+    let ctx = Box::new(ListenerContext {
+        event_bus,
+    });
+    let ctx_ptr = Box::into_raw(ctx) as *mut c_void;
+
+    extern "C" fn volume_cb(
+        object_id: AudioObjectID,
+        _num_addresses: u32,
+        _addresses: *const AudioObjectPropertyAddress,
+        client_data: *mut c_void,
+    ) -> OSStatus {
+        if client_data.is_null() {
+            return 0;
+        }
+        let ctx = unsafe { &*(client_data as *const ListenerContext) };
+        if let Ok(volume) = CoreAudioBackend::get_device_volume(object_id) {
+            ctx.event_bus.publish(AppEvent::VolumeChanged {
+                target: AudioTarget::SystemMaster,
+                volume,
+            });
+        }
+        0
+    }
+
+    unsafe {
+        AudioObjectAddPropertyListener(device_id, &address, Some(volume_cb), ctx_ptr);
+    }
+    // ctx_ptr intentionally leaked -- lives for the lifetime of the process
+}
+
+fn install_mute_listener(device_id: AudioObjectID, event_bus: EventBus) {
+    let address = AudioObjectPropertyAddress {
+        mSelector: kAudioDevicePropertyMute,
+        mScope: kAudioDevicePropertyScopeOutput,
+        mElement: kAudioObjectPropertyElementMain,
+    };
+
+    let ctx = Box::new(ListenerContext {
+        event_bus,
+    });
+    let ctx_ptr = Box::into_raw(ctx) as *mut c_void;
+
+    extern "C" fn mute_cb(
+        object_id: AudioObjectID,
+        _num_addresses: u32,
+        _addresses: *const AudioObjectPropertyAddress,
+        client_data: *mut c_void,
+    ) -> OSStatus {
+        if client_data.is_null() {
+            return 0;
+        }
+        let ctx = unsafe { &*(client_data as *const ListenerContext) };
+        if let Ok(muted) = CoreAudioBackend::get_device_mute(object_id) {
+            ctx.event_bus.publish(AppEvent::MuteChanged {
+                target: AudioTarget::SystemMaster,
+                muted,
+            });
+        }
+        0
+    }
+
+    unsafe {
+        AudioObjectAddPropertyListener(device_id, &address, Some(mute_cb), ctx_ptr);
+    }
+}
+
+fn install_default_device_listener(event_bus: EventBus) {
+    let address = AudioObjectPropertyAddress {
+        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain,
+    };
+
+    let ctx = Box::new(ListenerContext { event_bus });
+    let ctx_ptr = Box::into_raw(ctx) as *mut c_void;
+
+    extern "C" fn default_device_cb(
+        _object_id: AudioObjectID,
+        _num_addresses: u32,
+        _addresses: *const AudioObjectPropertyAddress,
+        client_data: *mut c_void,
+    ) -> OSStatus {
+        if client_data.is_null() {
+            return 0;
+        }
+        let ctx = unsafe { &*(client_data as *const ListenerContext) };
+        ctx.event_bus.publish(AppEvent::DefaultDeviceChanged);
+        0
+    }
+
+    unsafe {
+        AudioObjectAddPropertyListener(
+            kAudioObjectSystemObject,
+            &address,
+            Some(default_device_cb),
+            ctx_ptr,
+        );
+    }
+}
+
+use crate::macos_utils::cfstring_to_string;

@@ -23,8 +23,10 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 thiserror = "2"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "registry"] }
+tracing-appender = "0.2"
 anyhow = "1"
+clap = { version = "4", features = ["derive"] }
 
 # MIDI
 midir = "0.10"

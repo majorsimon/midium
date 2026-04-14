@@ -10,23 +10,11 @@
 
   let plugins: PluginInfo[] = [];
   let loading = true;
-  // Local enabled state — purely visual until backend hot-reload is supported.
-  let enabledState: Record<string, boolean> = {};
-  let pendingChanges = false;
 
   onMount(async () => {
     plugins = await invoke<PluginInfo[]>("list_plugins").catch(() => []);
-    enabledState = Object.fromEntries(plugins.map((p) => [p.name, p.enabled]));
     loading = false;
   });
-
-  function togglePlugin(name: string) {
-    enabledState[name] = !enabledState[name];
-    enabledState = enabledState; // trigger reactivity
-    pendingChanges = Object.entries(enabledState).some(
-      ([n, v]) => plugins.find((p) => p.name === n)?.enabled !== v
-    );
-  }
 </script>
 
 <div style="padding: 20px; max-width: 700px;">
@@ -49,7 +37,6 @@
             <th>Plugin</th>
             <th>Custom Actions</th>
             <th>Status</th>
-            <th>Enabled</th>
           </tr>
         </thead>
         <tbody>
@@ -59,9 +46,9 @@
                 <div class="plugin-name-cell">
                   <span
                     class="status-dot"
-                    class:dot-enabled={enabledState[p.name]}
-                    class:dot-disabled={!enabledState[p.name]}
-                    title={enabledState[p.name] ? "Enabled" : "Disabled"}
+                    class:dot-enabled={p.enabled}
+                    class:dot-disabled={!p.enabled}
+                    title={p.enabled ? "Enabled" : "Disabled"}
                   ></span>
                   <span style="font-weight: 500;">{p.name}</span>
                 </div>
@@ -74,20 +61,9 @@
                 {/if}
               </td>
               <td>
-                <span class="tag" class:active={enabledState[p.name]}>
-                  {enabledState[p.name] ? "Active" : "Disabled"}
+                <span class="tag" class:active={p.enabled}>
+                  {p.enabled ? "Active" : "Disabled"}
                 </span>
-              </td>
-              <td>
-                <button
-                  class="toggle"
-                  class:toggle-on={enabledState[p.name]}
-                  aria-label="{enabledState[p.name] ? 'Disable' : 'Enable'} {p.name}"
-                  aria-pressed={enabledState[p.name]}
-                  on:click={() => togglePlugin(p.name)}
-                >
-                  <span class="toggle-thumb"></span>
-                </button>
               </td>
             </tr>
           {/each}
@@ -96,16 +72,12 @@
     {/if}
   </div>
 
-  <div class="card restart-notice" style="margin-top: 16px;">
-    <div class="restart-notice-inner">
-      <span class="restart-icon" aria-hidden="true">&#9432;</span>
+  <div class="card config-notice" style="margin-top: 16px;">
+    <div class="config-notice-inner">
+      <span class="config-icon" aria-hidden="true">&#9432;</span>
       <div>
-        <strong>Changes take effect on next restart.</strong>
-        Lua VMs are initialised once at startup — enable/disable toggles above are
-        saved for the next launch. Hot-reload is not yet supported.
-        {#if pendingChanges}
-          <span class="pending-badge">Unsaved changes</span>
-        {/if}
+        Plugins are enabled/disabled via the <code>plugins.enabled</code> list in
+        <code>config.toml</code>. Changes take effect on next restart.
       </div>
     </div>
   </div>
@@ -175,7 +147,6 @@ function on_unload() end</pre>
   ul { list-style: disc; }
   li { margin-bottom: 2px; }
 
-  /* ── plugin name + status dot ── */
   .plugin-name-cell {
     display: flex;
     align-items: center;
@@ -191,47 +162,11 @@ function on_unload() end</pre>
   .dot-enabled  { background: var(--success); box-shadow: 0 0 4px color-mix(in srgb, var(--success) 60%, transparent); }
   .dot-disabled { background: var(--text-muted); }
 
-  /* ── toggle switch ── */
-  .toggle {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    width: 36px;
-    height: 20px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--surface2);
-    padding: 0;
-    cursor: pointer;
-    transition: background 0.2s, border-color 0.2s;
-    flex-shrink: 0;
+  .config-notice {
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+    background: color-mix(in srgb, var(--accent) 4%, var(--surface));
   }
-  .toggle:hover { border-color: var(--accent); }
-  .toggle-on {
-    background: color-mix(in srgb, var(--accent) 30%, var(--surface2));
-    border-color: var(--accent);
-  }
-  .toggle-thumb {
-    position: absolute;
-    left: 2px;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: var(--text-muted);
-    transition: transform 0.2s, background 0.2s;
-    pointer-events: none;
-  }
-  .toggle-on .toggle-thumb {
-    transform: translateX(16px);
-    background: var(--accent);
-  }
-
-  /* ── restart notice ── */
-  .restart-notice {
-    border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
-    background: color-mix(in srgb, var(--warning) 6%, var(--surface));
-  }
-  .restart-notice-inner {
+  .config-notice-inner {
     display: flex;
     align-items: flex-start;
     gap: 10px;
@@ -239,20 +174,10 @@ function on_unload() end</pre>
     color: var(--text-muted);
     line-height: 1.5;
   }
-  .restart-icon {
+  .config-icon {
     font-size: 16px;
-    color: var(--warning);
+    color: var(--accent);
     flex-shrink: 0;
     line-height: 1.2;
-  }
-  .pending-badge {
-    display: inline-block;
-    margin-left: 6px;
-    padding: 1px 6px;
-    border-radius: 3px;
-    font-size: 10px;
-    font-weight: 600;
-    background: color-mix(in srgb, var(--warning) 20%, transparent);
-    color: var(--warning);
   }
 </style>

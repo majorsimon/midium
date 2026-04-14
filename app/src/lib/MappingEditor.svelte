@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { listen } from "@tauri-apps/api/event";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import {
     type Mapping, type ControlId, type MidiEvent,
     type AudioDeviceInfo, type AudioSessionInfo,
@@ -26,7 +26,12 @@
   let sessions: AudioSessionInfo[] = [];
   let learnActive = false;
   let showAddForm = false;
-  let pendingDeleteControl: ControlId | null = null;
+  let pendingDeleteKey: string | null = null;
+  let unlistens: UnlistenFn[] = [];
+
+  function controlKey(c: ControlId): string {
+    return `${c.device}|${c.channel}|${JSON.stringify(c.control_type)}`;
+  }
 
   let form = {
     device: "",
@@ -62,7 +67,7 @@
 
   async function loadMappings() {
     mappings = await invoke<Mapping[]>("get_mappings").catch(() => [] as Mapping[]);
-    pendingDeleteControl = null;
+    pendingDeleteKey = null;
   }
 
   async function loadPorts() {
@@ -221,7 +226,7 @@
   }
 
   async function deleteMapping(control: ControlId) {
-    pendingDeleteControl = null;
+    pendingDeleteKey = null;
     await invoke("delete_mapping", { control }).catch(console.error);
     await loadMappings();
   }
@@ -235,10 +240,14 @@
 
   onMount(async () => {
     await Promise.all([loadMappings(), loadPorts(), loadAudioTargets()]);
-    await listen<MidiEvent>("midi-learn-result", (e) => {
-      applyLearnedControl(e.payload);
-    });
+    unlistens.push(
+      await listen<MidiEvent>("midi-learn-result", (e) => {
+        applyLearnedControl(e.payload);
+      }),
+    );
   });
+
+  onDestroy(() => unlistens.forEach((u) => u()));
 </script>
 
 <div class="editor">
@@ -577,7 +586,7 @@
 
           <!-- Delete — two-step inline confirm (window.confirm is blocked in Tauri) -->
           <div class="col-del">
-            {#if pendingDeleteControl === m.control}
+            {#if pendingDeleteKey === controlKey(m.control)}
               <div class="del-confirm">
                 <button
                   class="del-btn del-yes"
@@ -587,13 +596,13 @@
                 <button
                   class="del-btn del-no"
                   title="Cancel"
-                  on:click={() => pendingDeleteControl = null}
+                  on:click={() => pendingDeleteKey = null}
                 >✗</button>
               </div>
             {:else}
               <button
                 class="del-btn"
-                on:click={() => pendingDeleteControl = m.control}
+                on:click={() => pendingDeleteKey = controlKey(m.control)}
                 title="Delete"
               >×</button>
             {/if}
