@@ -302,4 +302,57 @@ mod tests {
         assert_eq!(t.apply(0, 0.0), Some(0.0));
         assert_eq!(t.apply(127, 0.0), Some(1.0));
     }
+
+    #[test]
+    fn relative_encoder_clockwise() {
+        let t = ValueTransform::RelativeEncoder { sensitivity: 0.01 };
+        // raw=1 → small positive increment from 0.0
+        let v = t.apply(1, 0.0).unwrap();
+        assert!((v - 0.01).abs() < 1e-9, "v={v}");
+        // raw=5 → larger increment
+        let v = t.apply(5, 0.0).unwrap();
+        assert!((v - 0.05).abs() < 1e-9, "v={v}");
+    }
+
+    #[test]
+    fn relative_encoder_counterclockwise() {
+        let t = ValueTransform::RelativeEncoder { sensitivity: 0.01 };
+        // raw=127 → decrement by 1 step: -(128-127) * 0.01 = -0.01
+        let v = t.apply(127, 0.5).unwrap();
+        assert!((v - 0.49).abs() < 1e-9, "v={v}");
+        // raw=65 → decrement by 63 steps: -(128-65) * 0.01 = -0.63
+        let v = t.apply(65, 0.8).unwrap();
+        assert!((v - 0.17).abs() < 1e-9, "v={v}");
+    }
+
+    #[test]
+    fn relative_encoder_accumulates() {
+        let t = ValueTransform::RelativeEncoder { sensitivity: 0.01 };
+        let mut current = 0.0;
+        // 10 clockwise clicks of raw=1
+        for _ in 0..10 {
+            current = t.apply(1, current).unwrap();
+        }
+        assert!((current - 0.1).abs() < 1e-9, "current={current}");
+    }
+
+    #[test]
+    fn relative_encoder_clamps() {
+        let t = ValueTransform::RelativeEncoder { sensitivity: 0.5 };
+        // Large clockwise from near max → clamp to 1.0
+        let v = t.apply(63, 0.9).unwrap();
+        assert_eq!(v, 1.0);
+        // Large counterclockwise from near min → clamp to 0.0
+        let v = t.apply(65, 0.1).unwrap();
+        assert_eq!(v, 0.0);
+    }
+
+    #[test]
+    fn relative_encoder_sensitivity_scaling() {
+        let low = ValueTransform::RelativeEncoder { sensitivity: 0.005 };
+        let high = ValueTransform::RelativeEncoder { sensitivity: 0.05 };
+        let v_low = low.apply(1, 0.0).unwrap();
+        let v_high = high.apply(1, 0.0).unwrap();
+        assert!((v_high / v_low - 10.0).abs() < 1e-9);
+    }
 }
