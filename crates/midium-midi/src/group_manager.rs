@@ -276,6 +276,8 @@ fn send_led(bus: &EventBus, device: &str, ctrl: &ControlSpec, on: bool) {
 }
 
 /// True if the MIDI event's device name matches the stored pattern (fuzzy substring).
+/// Bidirectional: "nanoKONTROL2" matches "nanoKONTROL2 MIDI 1" and vice versa,
+/// so either the user or the OS can use the longer/shorter form.
 fn device_matches(actual: &str, pattern: &str) -> bool {
     actual.to_lowercase().contains(&pattern.to_lowercase())
         || pattern.to_lowercase().contains(&actual.to_lowercase())

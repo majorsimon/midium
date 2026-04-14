@@ -21,9 +21,11 @@ use midium_plugins::{PluginInfo, PluginManager};
 use midium_shortcuts::ShortcutHandler;
 
 // ---------------------------------------------------------------------------
-// Shared audio adapter
-// Wraps Arc<dyn AudioBackend> as VolumeControl so ActionDispatcher and
-// AppState can hold the same backend instance.
+// Shared audio adapter — bridges Arc<dyn AudioBackend> to Box<dyn VolumeControl>.
+//
+// ActionDispatcher and GroupManager take `Box<dyn VolumeControl>`, but AppState
+// needs the full `AudioBackend` trait for IPC queries (list_devices, etc).
+// This newtype lets both sides share the same backend instance via Arc.
 // ---------------------------------------------------------------------------
 struct SharedAudio(Arc<dyn AudioBackend>);
 
@@ -468,7 +470,9 @@ pub fn run() {
                 });
             }
 
-            // EventBus → Tauri event bridge
+            // EventBus → Tauri event bridge.
+            // Central processing loop: MIDI events go through MappingEngine → ActionDispatcher,
+            // while other events are forwarded to the frontend via Tauri's emit() IPC.
             let bus = event_bus.clone();
             let app_handle3 = app.handle().clone();
             tauri::async_runtime::spawn(async move {

@@ -38,8 +38,10 @@ impl MappingEngine {
         let control_id = ControlId::from_event(event);
         let raw_value = extract_value(&event.message);
 
-        // Two-phase lookup: exact first, then fuzzy substring match on device name.
-        // This lets mappings use "nanoKONTROL2" to match "nanoKONTROL2 MIDI 1".
+        // Two-phase lookup: exact match first (O(1) HashMap), then fall back to
+        // fuzzy substring match on device name (O(n) scan). This lets users write
+        // mappings with a short device pattern like "nanoKONTROL2" that matches
+        // the full OS port name "nanoKONTROL2 MIDI 1".
         let resolved = self.mappings.get(&control_id).cloned().or_else(|| {
             self.mappings
                 .iter()

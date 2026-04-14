@@ -348,6 +348,10 @@ fn build_api(
 // Audio target string → enum
 // ---------------------------------------------------------------------------
 
+/// Parse the Lua-facing audio target string into an `AudioTarget` enum.
+///
+/// Accepted formats: `"master"`, `"system"`, `"focused"`, `"app:<name>"`, `"device:<id>"`.
+/// Unknown strings fall back to `SystemMaster`.
 fn parse_target(s: &str) -> AudioTarget {
     match s {
         "master" | "system" => AudioTarget::SystemMaster,

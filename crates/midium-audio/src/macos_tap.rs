@@ -54,6 +54,8 @@ struct TapState {
     tap_id: AudioObjectID,
     aggregate_device_id: AudioObjectID,
     /// Volume multiplier stored as bit-cast f64 for lock-free audio thread access.
+    /// AtomicU64 is used instead of AtomicF64 (which doesn't exist in std) — we
+    /// convert via f64::to_bits() / f64::from_bits() for atomic load/store.
     volume: Arc<AtomicU64>,
     muted: Arc<AtomicU64>,
     io_proc_id: Option<AudioDeviceIOProcID>,

@@ -430,6 +430,11 @@ fn set_default_endpoint(device_id: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Per-session helpers — enumerate WASAPI sessions on the default render device
+// and find the first whose display name contains the given substring.
+// ---------------------------------------------------------------------------
+
 /// Set the volume of the audio session whose display name contains `name`.
 fn set_session_volume_by_name(
     enumerator: &IMMDeviceEnumerator,
