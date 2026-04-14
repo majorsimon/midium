@@ -6,7 +6,7 @@ use tracing::{error, info, warn};
 
 use midium_audio::{backend::AudioBackend, create_backend};
 use midium_core::config::config_dir;
-use midium_core::dispatch::{ActionDispatcher, VolumeControl};
+use midium_core::dispatch::{ActionDispatcher, DeviceLister, VolumeControl};
 use midium_core::event_bus::EventBus;
 use midium_core::mapping::MappingEngine;
 use midium_core::types::{AppEvent, AudioTarget};
@@ -36,6 +36,23 @@ impl VolumeControl for ArcAudio {
     }
     fn is_default_output(&self, id: &str) -> anyhow::Result<bool> {
         self.0.is_default_output(id)
+    }
+}
+
+impl DeviceLister for ArcAudio {
+    fn list_output_device_ids(&self) -> Vec<(String, bool)> {
+        self.0.list_output_devices()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|d| (d.id, d.is_default))
+            .collect()
+    }
+    fn list_input_device_ids(&self) -> Vec<(String, bool)> {
+        self.0.list_input_devices()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|d| (d.id, d.is_default))
+            .collect()
     }
 }
 
@@ -229,7 +246,10 @@ async fn async_main(
 ) -> anyhow::Result<()> {
     // Wrap in Arc so it can be shared between dispatcher and GroupManager.
     let audio_arc: Arc<dyn AudioBackend> = Arc::from(audio_backend);
-    let dispatcher = Arc::new(ActionDispatcher::new(Box::new(ArcAudio(audio_arc.clone()))));
+    let dispatcher = Arc::new(
+        ActionDispatcher::new(Box::new(ArcAudio(audio_arc.clone())))
+            .with_device_lister(Box::new(ArcAudio(audio_arc.clone()))),
+    );
 
     let profiles_arc = Arc::new(profiles);
 

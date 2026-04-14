@@ -154,6 +154,8 @@
         const device_id = raw.startsWith("device:") ? raw.slice(7) : raw;
         return { SetDefaultInput: { device_id } };
       }
+      case "CycleOutputDevices": return "CycleOutputDevices";
+      case "CycleInputDevices":  return "CycleInputDevices";
       case "MediaPlayPause": return "MediaPlayPause";
       case "MediaNext":      return "MediaNext";
       case "MediaPrev":      return "MediaPrev";
@@ -305,6 +307,8 @@
               <optgroup label="Devices">
                 <option value="SetDefaultOutput">Set Default Output</option>
                 <option value="SetDefaultInput">Set Default Input</option>
+                <option value="CycleOutputDevices">Cycle Output Devices</option>
+                <option value="CycleInputDevices">Cycle Input Devices</option>
               </optgroup>
               <optgroup label="Media">
                 <option value="MediaPlayPause">Play / Pause</option>

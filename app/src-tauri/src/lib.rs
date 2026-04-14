@@ -11,7 +11,7 @@ use tracing::info;
 use midium_audio::{backend::AudioBackend, create_backend};
 use midium_core::{
     config::{config_dir, load_config, load_mappings, AppConfig, MappingsConfig},
-    dispatch::{ActionDispatcher, VolumeControl},
+    dispatch::{ActionDispatcher, DeviceLister, VolumeControl},
     event_bus::EventBus,
     mapping::MappingEngine,
     types::{AppEvent, AudioTarget, FaderGroup, MidiEvent},
@@ -47,6 +47,23 @@ impl VolumeControl for SharedAudio {
     }
     fn is_default_output(&self, id: &str) -> anyhow::Result<bool> {
         self.0.is_default_output(id)
+    }
+}
+
+impl DeviceLister for SharedAudio {
+    fn list_output_device_ids(&self) -> Vec<(String, bool)> {
+        self.0.list_output_devices()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|d| (d.id, d.is_default))
+            .collect()
+    }
+    fn list_input_device_ids(&self) -> Vec<(String, bool)> {
+        self.0.list_input_devices()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|d| (d.id, d.is_default))
+            .collect()
     }
 }
 
@@ -395,10 +412,13 @@ pub fn run() {
             let audio_box = create_backend().expect("Failed to initialize audio backend");
             let audio: Arc<dyn AudioBackend> = Arc::from(audio_box);
 
-            let dispatcher = Arc::new(ActionDispatcher::with_shortcuts(
-                Box::new(SharedAudio(audio.clone())),
-                Box::new(ShortcutHandler::new()),
-            ));
+            let dispatcher = Arc::new(
+                ActionDispatcher::with_shortcuts(
+                    Box::new(SharedAudio(audio.clone())),
+                    Box::new(ShortcutHandler::new()),
+                )
+                .with_device_lister(Box::new(SharedAudio(audio.clone()))),
+            );
 
             let mapping_engine = Arc::new(Mutex::new(MappingEngine::new(event_bus.clone())));
             mapping_engine
