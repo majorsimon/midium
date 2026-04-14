@@ -8,6 +8,7 @@ use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED, STGM_READ,
 };
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
 // ---------------------------------------------------------------------------
 // IPolicyConfig — undocumented COM interface for setting the default audio
@@ -36,7 +37,7 @@ unsafe trait IPolicyConfig: windows::core::IUnknown {
 const CLSID_POLICY_CONFIG_CLIENT: windows::core::GUID =
     windows::core::GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63df40c2bc9);
 
-use tracing::{debug, warn};
+use tracing::debug;
 
 use midium_core::dispatch::VolumeControl;
 use midium_core::types::{AudioCapabilities, AudioDeviceInfo, AudioSessionInfo, AudioTarget};
@@ -134,8 +135,12 @@ impl VolumeControl for WasapiBackend {
                 set_session_volume_by_name(&enumerator, name, volume)
             }
             AudioTarget::FocusedApplication => {
-                warn!("FocusedApplication volume not yet implemented on Windows");
-                Ok(())
+                let pid = foreground_pid()?;
+                let vol = find_session_by_pid(&enumerator, pid)?;
+                unsafe {
+                    vol.SetMasterVolume(volume as f32, std::ptr::null())
+                        .map_err(|e| anyhow::anyhow!("SetMasterVolume (focused PID {pid}): {e}"))
+                }
             }
         }
     }
@@ -170,8 +175,12 @@ impl VolumeControl for WasapiBackend {
                 set_session_mute_by_name(&enumerator, name, muted)
             }
             AudioTarget::FocusedApplication => {
-                warn!("FocusedApplication mute not yet implemented on Windows");
-                Ok(())
+                let pid = foreground_pid()?;
+                let vol = find_session_by_pid(&enumerator, pid)?;
+                unsafe {
+                    vol.SetMute(muted, std::ptr::null())
+                        .map_err(|e| anyhow::anyhow!("SetMute (focused PID {pid}): {e}"))
+                }
             }
         }
     }
@@ -206,8 +215,10 @@ impl VolumeControl for WasapiBackend {
                 get_session_muted_by_name(&enumerator, name)
             }
             AudioTarget::FocusedApplication => {
-                warn!("FocusedApplication mute query not yet implemented on Windows");
-                Ok(false)
+                let pid = foreground_pid()?;
+                let vol = find_session_by_pid(&enumerator, pid)?;
+                let muted: BOOL = unsafe { vol.GetMute().unwrap_or(BOOL(0)) };
+                Ok(muted.as_bool())
             }
         }
     }
@@ -334,8 +345,9 @@ impl AudioBackend for WasapiBackend {
                 get_session_volume_by_name(&enumerator, name)
             }
             AudioTarget::FocusedApplication => {
-                warn!("FocusedApplication volume query not yet implemented on Windows");
-                Ok(0.0)
+                let pid = foreground_pid()?;
+                let vol = find_session_by_pid(&enumerator, pid)?;
+                Ok(unsafe { vol.GetMasterVolume().unwrap_or(0.0) } as f64)
             }
         }
     }
@@ -440,6 +452,64 @@ fn set_default_endpoint(device_id: &str) -> anyhow::Result<()> {
 // Per-session helpers — enumerate WASAPI sessions on the default render device
 // and find the first whose display name contains the given substring.
 // ---------------------------------------------------------------------------
+
+/// Get the PID of the foreground window's owning process.
+fn foreground_pid() -> anyhow::Result<u32> {
+    let hwnd = unsafe { GetForegroundWindow() };
+    if hwnd.is_invalid() || hwnd.0.is_null() {
+        anyhow::bail!("No foreground window");
+    }
+    let mut pid: u32 = 0;
+    unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+    if pid == 0 {
+        anyhow::bail!("GetWindowThreadProcessId returned PID 0");
+    }
+    Ok(pid)
+}
+
+/// Find the `ISimpleAudioVolume` for the audio session owned by `target_pid`.
+fn find_session_by_pid(
+    enumerator: &IMMDeviceEnumerator,
+    target_pid: u32,
+) -> anyhow::Result<windows::Win32::Media::Audio::ISimpleAudioVolume> {
+    let device = unsafe {
+        enumerator
+            .GetDefaultAudioEndpoint(eRender, eConsole)
+            .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
+    };
+    let session_manager = unsafe {
+        device
+            .Activate::<windows::Win32::Media::Audio::IAudioSessionManager2>(CLSCTX_ALL, None)
+            .map_err(|e| anyhow::anyhow!("Activate IAudioSessionManager2: {e}"))?
+    };
+    let session_enum = unsafe {
+        session_manager
+            .GetSessionEnumerator()
+            .map_err(|e| anyhow::anyhow!("GetSessionEnumerator: {e}"))?
+    };
+    let count = unsafe {
+        session_enum
+            .GetCount()
+            .map_err(|e| anyhow::anyhow!("GetCount: {e}"))?
+    };
+
+    for i in 0..count {
+        let session_ctrl = unsafe {
+            session_enum
+                .GetSession(i)
+                .map_err(|e| anyhow::anyhow!("GetSession: {e}"))?
+        };
+        let session_ctrl2: windows::Win32::Media::Audio::IAudioSessionControl2 =
+            session_ctrl.cast().map_err(|e| anyhow::anyhow!("cast IAudioSessionControl2: {e}"))?;
+        let pid = unsafe { session_ctrl2.GetProcessId().unwrap_or(0) };
+        if pid == target_pid {
+            return session_ctrl
+                .cast()
+                .map_err(|e| anyhow::anyhow!("cast ISimpleAudioVolume: {e}"));
+        }
+    }
+    anyhow::bail!("No audio session for PID {target_pid}")
+}
 
 /// Find the `ISimpleAudioVolume` for the session whose display name contains `name`.
 fn find_session_by_name(

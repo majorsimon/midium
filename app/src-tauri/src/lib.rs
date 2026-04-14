@@ -642,6 +642,9 @@ pub fn run() {
                         Ok(AppEvent::DeviceDisconnected { device }) => {
                             let _ = app_handle3.emit("device-disconnected", &device);
                         }
+                        Ok(AppEvent::DefaultDeviceChanged) => {
+                            let _ = app_handle3.emit("default-device-changed", ());
+                        }
                         Ok(AppEvent::Shutdown) | Err(_) => break,
                         Ok(_) => {}
                     }

@@ -73,13 +73,25 @@ impl ActionDispatcher {
     }
 
     /// Cycle to the next device in the list, wrapping around.
-    fn cycle_device(&self, devices: Vec<(String, bool)>, is_output: bool) {
-        if devices.is_empty() {
+    /// If `allowed_ids` is `Some`, only devices in that set are considered.
+    fn cycle_device(
+        &self,
+        devices: Vec<(String, bool)>,
+        allowed_ids: &Option<Vec<String>>,
+        is_output: bool,
+    ) {
+        let candidates: Vec<(String, bool)> = match allowed_ids {
+            Some(ids) if !ids.is_empty() => {
+                devices.into_iter().filter(|(id, _)| ids.contains(id)).collect()
+            }
+            _ => devices,
+        };
+        if candidates.is_empty() {
             return;
         }
-        let current_idx = devices.iter().position(|(_, def)| *def).unwrap_or(0);
-        let next_idx = (current_idx + 1) % devices.len();
-        let next_id = &devices[next_idx].0;
+        let current_idx = candidates.iter().position(|(_, def)| *def).unwrap_or(0);
+        let next_idx = (current_idx + 1) % candidates.len();
+        let next_id = &candidates[next_idx].0;
         let direction = if is_output { "output" } else { "input" };
         info!(from = current_idx, to = next_idx, device = %next_id, "Cycling {direction} device");
         let result = if is_output {
@@ -87,8 +99,13 @@ impl ActionDispatcher {
         } else {
             self.audio.set_default_input(next_id)
         };
-        if let Err(e) = result {
-            warn!("Failed to cycle {direction} device: {e}");
+        match result {
+            Ok(()) => {
+                if let Some(bus) = &self.event_bus {
+                    bus.publish(AppEvent::DefaultDeviceChanged);
+                }
+            }
+            Err(e) => warn!("Failed to cycle {direction} device: {e}"),
         }
     }
 
@@ -114,14 +131,18 @@ impl ActionDispatcher {
             }
             Action::SetDefaultOutput { device_id } => {
                 debug!(device_id, "Switching default output");
-                if let Err(e) = self.audio.set_default_output(device_id) {
-                    warn!("Failed to set default output: {e}");
+                if self.audio.set_default_output(device_id).is_ok() {
+                    if let Some(bus) = &self.event_bus {
+                        bus.publish(AppEvent::DefaultDeviceChanged);
+                    }
                 }
             }
             Action::SetDefaultInput { device_id } => {
                 debug!(device_id, "Switching default input");
-                if let Err(e) = self.audio.set_default_input(device_id) {
-                    warn!("Failed to set default input: {e}");
+                if self.audio.set_default_input(device_id).is_ok() {
+                    if let Some(bus) = &self.event_bus {
+                        bus.publish(AppEvent::DefaultDeviceChanged);
+                    }
                 }
             }
             Action::ActionGroup { actions } => {
@@ -131,16 +152,24 @@ impl ActionDispatcher {
             }
             // Handled by PluginManager's own EventBus subscription
             Action::RunPluginAction { .. } => {}
-            Action::CycleOutputDevices => {
+            Action::CycleOutputDevices { ref device_ids } => {
+                if value == 0.0 {
+                    debug!("CycleOutputDevices suppressed (value=0, likely button release)");
+                    return;
+                }
                 if let Some(lister) = &self.devices {
-                    self.cycle_device(lister.list_output_device_ids(), true);
+                    self.cycle_device(lister.list_output_device_ids(), device_ids, true);
                 } else {
                     warn!("CycleOutputDevices: no device lister registered");
                 }
             }
-            Action::CycleInputDevices => {
+            Action::CycleInputDevices { ref device_ids } => {
+                if value == 0.0 {
+                    debug!("CycleInputDevices suppressed (value=0, likely button release)");
+                    return;
+                }
                 if let Some(lister) = &self.devices {
-                    self.cycle_device(lister.list_input_device_ids(), false);
+                    self.cycle_device(lister.list_input_device_ids(), device_ids, false);
                 } else {
                     warn!("CycleInputDevices: no device lister registered");
                 }

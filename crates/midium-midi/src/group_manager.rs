@@ -69,6 +69,7 @@ impl GroupManager {
             match rx.recv().await {
                 Ok(AppEvent::Midi(event)) => self.handle_midi(&event),
                 Ok(AppEvent::DeviceConnected { device }) => self.sync_leds(&device),
+                Ok(AppEvent::DefaultDeviceChanged) => self.sync_all_leds(),
                 Ok(AppEvent::GroupsChanged { groups }) => {
                     debug!(count = groups.len(), "Fader groups reloaded");
                     self.groups = groups
@@ -153,6 +154,18 @@ impl GroupManager {
         // turns off and the new default's turns on.
         if sync_after {
             self.sync_leds(&event.device);
+        }
+    }
+
+    /// Sync LEDs for all groups on all devices (e.g. after a default device change).
+    fn sync_all_leds(&self) {
+        for group in &self.groups {
+            let muted = self.audio.is_muted(&group.target).unwrap_or(false);
+            let r_on = match &group.target {
+                AudioTarget::Device { id } => self.audio.is_default_output(id).unwrap_or(false),
+                _ => !muted,
+            };
+            send_group_leds_full(&self.event_bus, group, muted, r_on, &group.device_pattern);
         }
     }
 

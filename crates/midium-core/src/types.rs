@@ -73,8 +73,8 @@ pub enum Action {
     ToggleMute { target: AudioTarget },
     SetDefaultOutput { device_id: String },
     SetDefaultInput { device_id: String },
-    CycleOutputDevices,
-    CycleInputDevices,
+    CycleOutputDevices { device_ids: Option<Vec<String>> },
+    CycleInputDevices { device_ids: Option<Vec<String>> },
     MediaPlayPause,
     MediaNext,
     MediaPrev,
@@ -240,6 +240,9 @@ pub enum AppEvent {
         device: String,
         data: Vec<u8>,
     },
+    /// Published after CycleOutputDevices/CycleInputDevices or SetDefaultOutput/SetDefaultInput
+    /// changes the default audio device. GroupManager uses this to sync R LEDs.
+    DefaultDeviceChanged,
     /// Notify the GroupManager that fader group config has changed.
     GroupsChanged {
         groups: Vec<FaderGroup>,

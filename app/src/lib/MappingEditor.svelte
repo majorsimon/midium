@@ -159,8 +159,18 @@
         const device_id = raw.startsWith("device:") ? raw.slice(7) : raw;
         return { SetDefaultInput: { device_id } };
       }
-      case "CycleOutputDevices": return "CycleOutputDevices";
-      case "CycleInputDevices":  return "CycleInputDevices";
+      case "CycleOutputDevices": {
+        const ids = form.actionTargets
+          .filter(t => t.startsWith("device:"))
+          .map(t => t.slice(7));
+        return { CycleOutputDevices: { device_ids: ids.length > 0 ? ids : null } };
+      }
+      case "CycleInputDevices": {
+        const ids = form.actionTargets
+          .filter(t => t.startsWith("device:"))
+          .map(t => t.slice(7));
+        return { CycleInputDevices: { device_ids: ids.length > 0 ? ids : null } };
+      }
       case "MediaPlayPause": return "MediaPlayPause";
       case "MediaNext":      return "MediaNext";
       case "MediaPrev":      return "MediaPrev";
@@ -398,7 +408,6 @@
             <div class="field">
               <label>Targets</label>
 
-              <!-- Selected targets as removable tags -->
               {#if form.actionTargets.length > 0}
                 <div class="target-tags">
                   {#each form.actionTargets as t, i}
@@ -410,7 +419,6 @@
                 </div>
               {/if}
 
-              <!-- "Add target" dropdown — resets to placeholder after each selection -->
               <select on:change={onAddTarget}>
                 <option value="" disabled selected>Add target…</option>
                 <option
@@ -457,6 +465,41 @@
                     disabled={form.actionTargets.includes("FocusedApplication")}
                   >Focused App (active window)</option>
                 </optgroup>
+              </select>
+            </div>
+          {/if}
+          {#if form.actionTypeName === "CycleOutputDevices" || form.actionTypeName === "CycleInputDevices"}
+            <div class="field">
+              <label>Devices to cycle (leave empty for all)</label>
+
+              {#if form.actionTargets.length > 0}
+                <div class="target-tags">
+                  {#each form.actionTargets as t, i}
+                    <span class="target-tag">
+                      {targetDisplayLabel(t)}
+                      <button class="tag-remove" on:click={() => removeTarget(i)} title="Remove">×</button>
+                    </span>
+                  {/each}
+                </div>
+              {/if}
+
+              <select on:change={onAddTarget}>
+                <option value="" disabled selected>Add device…</option>
+                {#if form.actionTypeName === "CycleOutputDevices"}
+                  {#each outputDevices as dev}
+                    <option
+                      value="device:{dev.id}"
+                      disabled={form.actionTargets.includes(`device:${dev.id}`)}
+                    >{dev.name}{dev.is_default ? " ✓" : ""}</option>
+                  {/each}
+                {:else}
+                  {#each inputDevices as dev}
+                    <option
+                      value="device:{dev.id}"
+                      disabled={form.actionTargets.includes(`device:${dev.id}`)}
+                    >{dev.name}{dev.is_default ? " ✓" : ""}</option>
+                  {/each}
+                {/if}
               </select>
             </div>
           {/if}

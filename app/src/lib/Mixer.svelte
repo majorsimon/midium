@@ -20,6 +20,8 @@
 
   let masterVolume = 0.7;
   let masterMuted = false;
+  let focusedVolume = 0.0;
+  let focusedMuted = false;
   let sessions: AudioSessionInfo[] = [];
   let devices: AudioDeviceInfo[] = [];
   let caps: AudioCapabilities = {
@@ -63,7 +65,7 @@
   /** Convert an AudioTarget to the local StripTarget discriminant. */
   function toStripTarget(t: AudioTarget): StripTarget {
     if (t === "SystemMaster") return "master";
-    if (t === "FocusedApplication") return "master";
+    if (t === "FocusedApplication") return "focused";
     if (typeof t === "object" && "Application" in t) return { app: t.Application.name };
     if (typeof t === "object" && "Device" in t) return { device: t.Device.id };
     return null;
@@ -83,7 +85,7 @@
   }
 
   // "Strip" type (local discriminant, mirrors what ChannelStrip props expect)
-  type StripTarget = null | "master" | { app: string } | { device: string };
+  type StripTarget = null | "master" | "focused" | { app: string } | { device: string };
 
   $: derivedStrips = mappings
     .map(m => ({ mapping: m, svTargets: getSetVolumeTargets(m.action) }))
@@ -137,6 +139,7 @@
     const t = primaryStripTarget(s.svTargets);
     if (!t || isDeviceTarget(t)) return 0;
     if (t === "master") return masterVolume;
+    if (t === "focused") return focusedVolume;
     return sessions.find(ss => ss.name === (t as { app: string }).app)?.volume ?? 0.8;
   });
 
@@ -144,13 +147,14 @@
     const t = primaryStripTarget(s.svTargets);
     if (!t || isDeviceTarget(t)) return false;
     if (t === "master") return masterMuted;
+    if (t === "focused") return focusedMuted;
     return sessions.find(ss => ss.name === (t as { app: string }).app)?.muted ?? false;
   });
 
   $: stripActive = derivedStrips.map(s => {
     const t = primaryStripTarget(s.svTargets);
     if (!t) return false;
-    if (t === "master") return true;
+    if (t === "master" || t === "focused") return true;
     if (isDeviceTarget(t))
       return devices.find(d => d.id === (t as { device: string }).device)?.is_default ?? false;
     return sessions.some(ss => ss.name === (t as { app: string }).app);
@@ -171,6 +175,7 @@
       if (!("SetVolume" in m.action)) return false;
       const t = m.action.SetVolume.target;
       if (target === "master") return t === "SystemMaster";
+      if (target === "focused") return t === "FocusedApplication";
       const appName = (target as { app: string }).app;
       return typeof t === "object" && "Application" in t && t.Application.name === appName;
     });
@@ -242,6 +247,7 @@
         masterVolume = v;
         await invoke("set_volume", { target: "SystemMaster", volume: v }).catch(console.error);
       } else if (target === "FocusedApplication") {
+        focusedVolume = v;
         await invoke("set_volume", { target: "FocusedApplication", volume: v }).catch(console.error);
       } else if (typeof target === "object" && "Application" in target) {
         const name = target.Application.name;
@@ -262,6 +268,9 @@
     if (t === "master") {
       masterMuted = !masterMuted;
       await invoke("toggle_mute", { target: "SystemMaster" }).catch(console.error);
+    } else if (t === "focused") {
+      focusedMuted = !focusedMuted;
+      await invoke("toggle_mute", { target: "FocusedApplication" }).catch(console.error);
     } else {
       const name = (t as { app: string }).app;
       sessions = sessions.map(ss => ss.name === name ? { ...ss, muted: !ss.muted } : ss);
@@ -385,9 +394,11 @@
     await syncAllLeds();
 
     refreshTimer = setInterval(async () => {
-      [masterVolume, masterMuted] = await Promise.all([
+      [masterVolume, masterMuted, focusedVolume, focusedMuted] = await Promise.all([
         invoke<number>("get_volume", { target: "SystemMaster" }).catch(() => masterVolume),
         invoke<boolean>("get_muted", { target: "SystemMaster" }).catch(() => masterMuted),
+        invoke<number>("get_volume", { target: "FocusedApplication" }).catch(() => focusedVolume),
+        invoke<boolean>("get_muted", { target: "FocusedApplication" }).catch(() => focusedMuted),
       ]);
       if (caps.per_app_volume) {
         const prev = sessions;
@@ -409,6 +420,16 @@
         await syncAllLeds();
       }),
       await listen<string>("device-disconnected", () => loadState()),
+      await listen("default-device-changed", async () => {
+        devices = [
+          ...await invoke<AudioDeviceInfo[]>("list_output_devices").catch(() => devices.filter(d => !d.is_input)),
+          ...(caps.input_device_switching
+            ? await invoke<AudioDeviceInfo[]>("list_input_devices").catch(() => devices.filter(d => d.is_input))
+            : devices.filter(d => d.is_input)),
+        ];
+        await refreshGroupState();
+        await syncAllLeds();
+      }),
     );
   });
 
@@ -437,7 +458,7 @@
             active={stripActive[s.mappingIdx]}
             assigned={true}
             isMaster={pt === "master"}
-            unavailable={isDeviceTarget(pt) ? !caps.device_switching : (pt !== "master" && !caps.per_app_volume)}
+            unavailable={isDeviceTarget(pt) ? !caps.device_switching : (pt !== "master" && pt !== "focused" && !caps.per_app_volume)}
             showFader={!isDeviceTarget(pt)}
             showS={false}
             rClickable={isDeviceTarget(pt)}
