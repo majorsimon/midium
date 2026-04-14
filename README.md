@@ -32,11 +32,11 @@ Built with Rust + Tauri v2 + Svelte.
 
 | Platform | Audio | MIDI |
 |----------|-------|------|
-| macOS 12+ | CoreAudio (master + device-level) | CoreMIDI via midir |
+| macOS 12+ | CoreAudio (master + device); Audio Tap API (per-app, 14.2+) | CoreMIDI via midir |
 | Linux | PulseAudio / PipeWire | ALSA sequencer via midir |
 | Windows 10+ | WASAPI | WinMM via midir |
 
-Per-application volume is supported on **Linux** (PulseAudio sink inputs) and **Windows** (WASAPI session manager). macOS per-app volume is not yet implemented — master and device-level control is fully functional.
+Per-application volume is supported on **macOS 14.2+** (Audio Tap API), **Linux** (PulseAudio sink inputs), and **Windows** (WASAPI session manager). On macOS < 14.2, only master and device-level control is available.
 
 ---
 
@@ -56,7 +56,7 @@ Prerequisites: [Rust](https://rustup.rs) (stable), [Node.js](https://nodejs.org)
 
 ```bash
 # Clone
-git clone https://github.com/your-org/midium
+git clone https://github.com/majorsimon/midium
 cd midium
 
 # Install frontend deps
@@ -240,63 +240,48 @@ Drop `.lua` files into `<config_dir>/plugins/` and enable them in **Settings →
 ### API reference
 
 ```lua
+-- Logging
+midium.log("message")                               -- logs at info level with plugin name
+
 -- Audio
-midium.audio.get_volume("SystemMaster")             -- returns 0.0–1.0
-midium.audio.set_volume("SystemMaster", 0.8)
-midium.audio.get_muted("SystemMaster")              -- returns bool
-midium.audio.set_muted("SystemMaster", true)
-midium.audio.list_devices()                         -- returns table of device info
-midium.audio.list_sessions()                        -- returns table of app sessions
-midium.audio.set_default_output("device_id")
+-- Target strings: "master", "system", "focused", "app:<name>", "device:<id>"
+midium.audio.get_volume("master")                   -- returns 0.0–1.0
+midium.audio.set_volume("master", 0.8)
+midium.audio.is_muted("master")                     -- returns bool
+midium.audio.set_mute("master", true)
+midium.audio.list_devices()                         -- returns table of {id, name, is_default}
+midium.audio.list_sessions()                        -- returns table of {name, volume, muted}
 
--- MIDI
-midium.midi.list_devices()                          -- returns table of port names
-midium.midi.send(device, channel, cc, value)        -- send a CC message
-
--- Shortcuts
-midium.shortcuts.media_play_pause()
-midium.shortcuts.media_next()
-midium.shortcuts.media_prev()
-midium.shortcuts.send_keys({"ctrl", "z"})
-
--- State (per-plugin persistent key/value)
-midium.state.set("key", value)
-midium.state.get("key")
+-- State (per-plugin key/value store, strings only)
+midium.state.set("key", "value")
+midium.state.get("key")                             -- returns string or nil
 
 -- Register a custom action (appears in the Mappings action dropdown)
-midium.register_action("my_action", {
-  label = "My Custom Action",
-  on_trigger = function(value)
-    midium.log("triggered with value " .. value)
-  end
-})
+midium.register_action("my_action", "Description", function(value)
+  midium.log("triggered with value " .. value)
+end)
 
--- Lifecycle hooks
-function on_load()   end
-function on_unload() end
-function on_midi_event(event) end   -- event: { device, channel, message }
-function on_audio_change(change) end
+-- Lifecycle hooks (define as globals or return in a module table)
+function on_load()   end                            -- called once after plugin loads
+function on_unload() end                            -- called on shutdown
+function on_midi_event(event) end                   -- event: { device, channel, message }
 ```
 
 ### Example plugin
 
 ```lua
--- duck_on_alarm.lua
--- Lowers volume when a notification sound fires, restores after 3 seconds.
+-- mute_toggle_log.lua
+-- Logs a message whenever a MIDI note-on arrives and toggles system mute.
 
-local saved = nil
+function on_load()
+  midium.log("mute_toggle_log plugin loaded")
+end
 
-function on_audio_change(change)
-  if change.type == "notification" and not saved then
-    saved = midium.audio.get_volume("SystemMaster")
-    midium.audio.set_volume("SystemMaster", saved * 0.3)
-    -- restore after 3 s
-    midium.schedule(3000, function()
-      if saved then
-        midium.audio.set_volume("SystemMaster", saved)
-        saved = nil
-      end
-    end)
+function on_midi_event(event)
+  if event.message.note and event.message.note.on then
+    local muted = midium.audio.is_muted("master")
+    midium.audio.set_mute("master", not muted)
+    midium.log("Toggled system mute → " .. tostring(not muted))
   end
 end
 ```
@@ -355,10 +340,10 @@ AudioBackend   ShortcutExecutor
 For use without a GUI (e.g. on a home server or Raspberry Pi):
 
 ```bash
-cargo run --bin midium -- --config path/to/config.toml --mappings path/to/mappings.toml
+cargo run --bin midium -- --config path/to/config-dir/ --profiles path/to/profiles-dir/
 ```
 
-The daemon loads the same config/mappings format and runs the full MIDI→audio pipeline without opening any window.
+The daemon loads `config.toml` and `mappings.toml` from the given config directory (or the platform default) and runs the full MIDI→audio pipeline without opening any window. Use `--help` for all options.
 
 ---
 
