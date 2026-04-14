@@ -8,8 +8,7 @@ use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED, STGM_READ,
 };
-use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
-use windows::Win32::System::Threading::GetWindowThreadProcessId;
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
 // ---------------------------------------------------------------------------
 // IPolicyConfig — undocumented COM interface for setting the default audio
@@ -38,7 +37,7 @@ unsafe trait IPolicyConfig: windows::core::IUnknown {
 const CLSID_POLICY_CONFIG_CLIENT: windows::core::GUID =
     windows::core::GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63df40c2bc9);
 
-use tracing::{debug, warn};
+use tracing::debug;
 
 use midium_core::dispatch::VolumeControl;
 use midium_core::types::{AudioCapabilities, AudioDeviceInfo, AudioSessionInfo, AudioTarget};
