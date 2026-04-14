@@ -47,8 +47,8 @@ export type Action =
   | { ToggleMute: { target: AudioTarget } }
   | { SetDefaultOutput: { device_id: string } }
   | { SetDefaultInput: { device_id: string } }
-  | "CycleOutputDevices"
-  | "CycleInputDevices"
+  | { CycleOutputDevices: { device_ids: string[] | null } }
+  | { CycleInputDevices: { device_ids: string[] | null } }
   | "MediaPlayPause"
   | "MediaNext"
   | "MediaPrev"
@@ -131,6 +131,14 @@ export function actionLabel(a: Action): string {
   if ("SendMidiMessage" in a) {
     const m = a.SendMidiMessage;
     return `MIDI out → ${m.device} ch${m.channel} ${m.message_type} ${m.number}=${m.value}`;
+  }
+  if ("CycleOutputDevices" in a) {
+    const ids = a.CycleOutputDevices.device_ids;
+    return ids && ids.length > 0 ? `Cycle Out (${ids.length} devices)` : "Cycle Output Devices";
+  }
+  if ("CycleInputDevices" in a) {
+    const ids = a.CycleInputDevices.device_ids;
+    return ids && ids.length > 0 ? `Cycle In (${ids.length} devices)` : "Cycle Input Devices";
   }
   if ("ActionGroup" in a) {
     // Flatten SetVolume / ToggleMute targets to a readable list
