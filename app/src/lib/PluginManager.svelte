@@ -8,8 +8,8 @@
     enabled: boolean;
   }
 
-  let plugins: PluginInfo[] = [];
-  let loading = true;
+  let plugins: PluginInfo[] = $state([]);
+  let loading = $state(true);
 
   onMount(async () => {
     plugins = await invoke<PluginInfo[]>("list_plugins").catch(() => []);

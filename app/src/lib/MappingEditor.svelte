@@ -10,30 +10,35 @@
 
   import type { ProfileControlType } from "./types";
 
-  /** When set by the Devices tab, opens the Add form pre-filled with this control. */
-  export let prefill: {
+  
+  interface Props {
+    /** When set by the Devices tab, opens the Add form pre-filled with this control. */
+    prefill?: {
     device: string;
     channel: number;
     controlTypeName: "CC" | "Note" | "PitchBend";
     controlNumber: number;
     profileControlType?: ProfileControlType;
-  } | null = null;
+  } | null;
+  }
 
-  let mappings: Mapping[] = [];
-  let midiPorts: string[] = [];
-  let outputDevices: AudioDeviceInfo[] = [];
-  let inputDevices: AudioDeviceInfo[] = [];
-  let sessions: AudioSessionInfo[] = [];
-  let learnActive = false;
-  let showAddForm = false;
-  let pendingDeleteKey: string | null = null;
+  let { prefill = $bindable(null) }: Props = $props();
+
+  let mappings: Mapping[] = $state([]);
+  let midiPorts: string[] = $state([]);
+  let outputDevices: AudioDeviceInfo[] = $state([]);
+  let inputDevices: AudioDeviceInfo[] = $state([]);
+  let sessions: AudioSessionInfo[] = $state([]);
+  let learnActive = $state(false);
+  let showAddForm = $state(false);
+  let pendingDeleteKey: string | null = $state(null);
   let unlistens: UnlistenFn[] = [];
 
   function controlKey(c: ControlId): string {
     return `${c.device}|${c.channel}|${JSON.stringify(c.control_type)}`;
   }
 
-  let form = {
+  let form = $state({
     device: "",
     channel: 0,
     controlTypeName: "CC" as "CC" | "Note" | "PitchBend",
@@ -47,23 +52,8 @@
     midiOutType: "cc" as "cc" | "note",
     midiOutNumber: 0,
     midiOutValue: 127,
-  };
+  });
 
-  // Apply prefill whenever the prop changes (set from Devices tab).
-  $: if (prefill) {
-    form.device = prefill.device;
-    form.channel = prefill.channel;
-    form.controlTypeName = prefill.controlTypeName;
-    form.controlNumber = prefill.controlNumber;
-    // Auto-select RelativeEncoder transform for encoder controls
-    if (prefill.profileControlType === "encoder") {
-      form.transformName = "RelativeEncoder";
-      form.encoderSensitivity = 0.01;
-    }
-    showAddForm = true;
-    loadAudioTargets();
-    prefill = null; // consume it
-  }
 
   async function loadMappings() {
     mappings = await invoke<Mapping[]>("get_mappings").catch(() => [] as Mapping[]);
@@ -248,6 +238,22 @@
   });
 
   onDestroy(() => unlistens.forEach((u) => u()));
+  $effect(() => {
+    if (prefill) {
+      form.device = prefill.device;
+      form.channel = prefill.channel;
+      form.controlTypeName = prefill.controlTypeName;
+      form.controlNumber = prefill.controlNumber;
+      // Auto-select RelativeEncoder transform for encoder controls
+      if (prefill.profileControlType === "encoder") {
+        form.transformName = "RelativeEncoder";
+        form.encoderSensitivity = 0.01;
+      }
+      showAddForm = true;
+      loadAudioTargets();
+      prefill = null; // consume it
+    }
+  });
 </script>
 
 <div class="editor">
@@ -265,11 +271,11 @@
           <span class="dot-pulse"></span>
           Waiting for MIDI…
         </span>
-        <button on:click={cancelLearn}>Cancel</button>
+        <button onclick={cancelLearn}>Cancel</button>
       {:else}
-        <button on:click={startLearn}>MIDI Learn</button>
+        <button onclick={startLearn}>MIDI Learn</button>
       {/if}
-      <button class="primary" on:click={() => {
+      <button class="primary" onclick={() => {
         showAddForm = !showAddForm;
         if (showAddForm) loadAudioTargets();
       }}>
@@ -359,7 +365,7 @@
               <label>Device</label>
               <select
                 value={form.actionTargets[0] ?? ""}
-                on:change={(e) => { form.actionTargets = [e.currentTarget.value]; }}
+                onchange={(e) => { form.actionTargets = [e.currentTarget.value]; }}
               >
                 <option value="" disabled>Select device…</option>
                 {#if form.actionTypeName === "SetDefaultOutput" && outputDevices.length > 0}
@@ -422,13 +428,13 @@
                   {#each form.actionTargets as t, i}
                     <span class="target-tag">
                       {targetDisplayLabel(t)}
-                      <button class="tag-remove" on:click={() => removeTarget(i)} title="Remove">×</button>
+                      <button class="tag-remove" onclick={() => removeTarget(i)} title="Remove">×</button>
                     </span>
                   {/each}
                 </div>
               {/if}
 
-              <select on:change={onAddTarget}>
+              <select onchange={onAddTarget}>
                 <option value="" disabled selected>Add target…</option>
                 <option
                   value="SystemMaster"
@@ -486,13 +492,13 @@
                   {#each form.actionTargets as t, i}
                     <span class="target-tag">
                       {targetDisplayLabel(t)}
-                      <button class="tag-remove" on:click={() => removeTarget(i)} title="Remove">×</button>
+                      <button class="tag-remove" onclick={() => removeTarget(i)} title="Remove">×</button>
                     </span>
                   {/each}
                 </div>
               {/if}
 
-              <select on:change={onAddTarget}>
+              <select onchange={onAddTarget}>
                 <option value="" disabled selected>Add device…</option>
                 {#if form.actionTypeName === "CycleOutputDevices"}
                   {#each outputDevices as dev}
@@ -538,8 +544,8 @@
       </div>
 
       <div class="form-footer">
-        <button class="primary" on:click={saveMapping}>Save Mapping</button>
-        <button on:click={() => showAddForm = false}>Cancel</button>
+        <button class="primary" onclick={saveMapping}>Save Mapping</button>
+        <button onclick={() => showAddForm = false}>Cancel</button>
       </div>
     </div>
   {/if}
@@ -591,18 +597,18 @@
                 <button
                   class="del-btn del-yes"
                   title="Confirm delete"
-                  on:click={() => deleteMapping(m.control)}
+                  onclick={() => deleteMapping(m.control)}
                 >✓</button>
                 <button
                   class="del-btn del-no"
                   title="Cancel"
-                  on:click={() => pendingDeleteKey = null}
+                  onclick={() => pendingDeleteKey = null}
                 >✗</button>
               </div>
             {:else}
               <button
                 class="del-btn"
-                on:click={() => pendingDeleteKey = controlKey(m.control)}
+                onclick={() => pendingDeleteKey = controlKey(m.control)}
                 title="Delete"
               >×</button>
             {/if}

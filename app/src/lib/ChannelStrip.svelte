@@ -1,48 +1,48 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
+  interface Props {
+    label?: string;
+    volume?: number;
+    muted?: boolean;
+    active?: boolean;
+    assigned?: boolean;
+    isMaster?: boolean;
+    unavailable?: boolean;
+    showFader?: boolean;
+    rClickable?: boolean;
+    showS?: boolean;
+    onVolumeChange?: (volume: number) => void;
+    onMuteToggle?: () => void;
+    onAssignClick?: () => void;
+    onRClick?: () => void;
+  }
 
-  /** Display name for this strip */
-  export let label: string = "";
-  /** Current volume (0–1) — updated by parent when external changes occur */
-  export let volume: number = 1.0;
-  /** Mute state (M button) */
-  export let muted: boolean = false;
-  /** R indicator: assigned target is currently producing audio */
-  export let active: boolean = false;
-  /** Strip has a target assigned */
-  export let assigned: boolean = false;
-  /** This strip is assigned to master output */
-  export let isMaster: boolean = false;
-  /**
-   * Fader present but volume control not available
-   * (e.g. per-app audio not supported on this platform yet)
-   */
-  export let unavailable: boolean = false;
-  /** When false, hides the fader and vol% (e.g. for device-selector strips) */
-  export let showFader: boolean = true;
-  /** When true, R is a clickable button rather than a passive indicator */
-  export let rClickable: boolean = false;
-  /** When false, the S (assign) button is hidden */
-  export let showS: boolean = true;
+  let {
+    label = "",
+    volume = 1.0,
+    muted = false,
+    active = false,
+    assigned = false,
+    isMaster = false,
+    unavailable = false,
+    showFader = true,
+    rClickable = false,
+    showS = true,
+    onVolumeChange,
+    onMuteToggle,
+    onAssignClick,
+    onRClick,
+  }: Props = $props();
 
-  const dispatch = createEventDispatcher<{
-    "volume-change": number;
-    "mute-toggle": void;
-    "assign-click": void;
-    "r-click": void;
-  }>();
+  let live = $derived((assigned || isMaster) && !unavailable);
 
-  $: live = (assigned || isMaster) && !unavailable;
-
-  // Local copy for the range binding.
-  // Syncs from the parent prop whenever we're not actively dragging,
-  // so external volume changes (from macOS or other sources) are reflected.
-  let localVol = volume;
-  let dragging = false;
-  $: if (!dragging) localVol = volume;
+  let localVol = $state(volume);
+  let dragging = $state(false);
+  $effect(() => {
+    if (!dragging) localVol = volume;
+  });
 
   function handleInput() {
-    dispatch("volume-change", localVol);
+    onVolumeChange?.(localVol);
   }
 </script>
 
@@ -62,9 +62,9 @@
         type="range" min="0" max="1" step="0.005"
         bind:value={localVol}
         disabled={unavailable}
-        on:pointerdown={() => dragging = true}
-        on:pointerup={() => { dragging = false; localVol = localVol; }}
-        on:input={handleInput}
+        onpointerdown={() => dragging = true}
+        onpointerup={() => { dragging = false; localVol = localVol; }}
+        oninput={handleInput}
       />
     {:else}
       <div class="fader-empty"></div>
@@ -81,7 +81,7 @@
     {#if showS}
       <button
         class="btn s"
-        on:click={() => dispatch("assign-click")}
+        onclick={() => onAssignClick?.()}
         title={assigned || isMaster ? "Reassign" : "Assign app"}
       >S</button>
     {/if}
@@ -90,7 +90,7 @@
       class="btn m"
       class:on={muted}
       disabled={!live}
-      on:click={() => dispatch("mute-toggle")}
+      onclick={() => onMuteToggle?.()}
       title={muted ? "Unmute" : "Mute"}
     >M</button>
 
@@ -99,7 +99,7 @@
       <button
         class="btn r"
         class:on={active}
-        on:click={() => dispatch("r-click")}
+        onclick={() => onRClick?.()}
         title={active ? "Default output" : "Set as default output"}
       >R</button>
     {:else}
