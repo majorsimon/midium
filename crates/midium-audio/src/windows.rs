@@ -17,6 +17,7 @@ use windows::Win32::System::Com::{
 // IID:   {F8679F50-850A-41CF-9C72-430F290290C8}
 // ---------------------------------------------------------------------------
 
+#[allow(non_snake_case)]
 #[windows::core::interface("F8679F50-850A-41CF-9C72-430F290290C8")]
 unsafe trait IPolicyConfig: windows::core::IUnknown {
     // Stub methods that precede SetDefaultEndpoint in the vtable.
