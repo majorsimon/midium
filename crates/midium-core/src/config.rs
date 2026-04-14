@@ -37,9 +37,6 @@ pub struct AudioConfig {
     /// How often to refresh audio device/session lists (seconds).
     #[serde(default = "default_refresh_interval")]
     pub refresh_interval_secs: u64,
-    /// Volume change smoothing (0.0 = none, 1.0 = max).
-    #[serde(default)]
-    pub smoothing: f64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -87,7 +84,6 @@ impl Default for AudioConfig {
     fn default() -> Self {
         Self {
             refresh_interval_secs: default_refresh_interval(),
-            smoothing: 0.0,
         }
     }
 }

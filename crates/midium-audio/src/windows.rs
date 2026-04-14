@@ -435,216 +435,92 @@ fn set_default_endpoint(device_id: &str) -> anyhow::Result<()> {
 // and find the first whose display name contains the given substring.
 // ---------------------------------------------------------------------------
 
-/// Set the volume of the audio session whose display name contains `name`.
+/// Find the `ISimpleAudioVolume` for the session whose display name contains `name`.
+fn find_session_by_name(
+    enumerator: &IMMDeviceEnumerator,
+    name: &str,
+) -> anyhow::Result<windows::Win32::Media::Audio::ISimpleAudioVolume> {
+    let device = unsafe {
+        enumerator
+            .GetDefaultAudioEndpoint(eRender, eConsole)
+            .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
+    };
+    let session_manager = unsafe {
+        device
+            .Activate::<windows::Win32::Media::Audio::IAudioSessionManager2>(CLSCTX_ALL, None)
+            .map_err(|e| anyhow::anyhow!("Activate IAudioSessionManager2: {e}"))?
+    };
+    let session_enum = unsafe {
+        session_manager
+            .GetSessionEnumerator()
+            .map_err(|e| anyhow::anyhow!("GetSessionEnumerator: {e}"))?
+    };
+    let count = unsafe {
+        session_enum
+            .GetCount()
+            .map_err(|e| anyhow::anyhow!("GetCount: {e}"))?
+    };
+
+    let name_lower = name.to_lowercase();
+    for i in 0..count {
+        let session_ctrl = unsafe {
+            session_enum
+                .GetSession(i)
+                .map_err(|e| anyhow::anyhow!("GetSession: {e}"))?
+        };
+        let display_name = unsafe {
+            session_ctrl
+                .GetDisplayName()
+                .ok()
+                .and_then(|p| p.to_string().ok())
+                .unwrap_or_default()
+        };
+        if display_name.to_lowercase().contains(&name_lower) {
+            return session_ctrl
+                .cast()
+                .map_err(|e| anyhow::anyhow!("cast ISimpleAudioVolume: {e}"));
+        }
+    }
+    anyhow::bail!("No audio session matching '{name}' found")
+}
+
 fn set_session_volume_by_name(
     enumerator: &IMMDeviceEnumerator,
     name: &str,
     volume: f64,
 ) -> anyhow::Result<()> {
-    let device = unsafe {
-        enumerator
-            .GetDefaultAudioEndpoint(eRender, eConsole)
-            .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
-    };
-    let session_manager = unsafe {
-        device
-            .Activate::<windows::Win32::Media::Audio::IAudioSessionManager2>(CLSCTX_ALL, None)
-            .map_err(|e| anyhow::anyhow!("Activate IAudioSessionManager2: {e}"))?
-    };
-    let session_enum = unsafe {
-        session_manager
-            .GetSessionEnumerator()
-            .map_err(|e| anyhow::anyhow!("GetSessionEnumerator: {e}"))?
-    };
-    let count = unsafe {
-        session_enum
-            .GetCount()
-            .map_err(|e| anyhow::anyhow!("GetCount: {e}"))?
-    };
-
-    let name_lower = name.to_lowercase();
-    for i in 0..count {
-        let session_ctrl = unsafe {
-            session_enum
-                .GetSession(i)
-                .map_err(|e| anyhow::anyhow!("GetSession: {e}"))?
-        };
-        let display_name = unsafe {
-            session_ctrl
-                .GetDisplayName()
-                .ok()
-                .and_then(|p| p.to_string().ok())
-                .unwrap_or_default()
-        };
-        if display_name.to_lowercase().contains(&name_lower) {
-            let simple_vol: windows::Win32::Media::Audio::ISimpleAudioVolume =
-                session_ctrl.cast().map_err(|e| anyhow::anyhow!("cast ISimpleAudioVolume: {e}"))?;
-            unsafe {
-                simple_vol
-                    .SetMasterVolume(volume as f32, std::ptr::null())
-                    .map_err(|e| anyhow::anyhow!("SetMasterVolume: {e}"))?;
-            }
-            return Ok(());
-        }
+    let vol = find_session_by_name(enumerator, name)?;
+    unsafe {
+        vol.SetMasterVolume(volume as f32, std::ptr::null())
+            .map_err(|e| anyhow::anyhow!("SetMasterVolume: {e}"))
     }
-    anyhow::bail!("No audio session matching '{name}' found")
 }
 
-/// Set the mute state of the audio session whose display name contains `name`.
 fn set_session_mute_by_name(
     enumerator: &IMMDeviceEnumerator,
     name: &str,
     muted: bool,
 ) -> anyhow::Result<()> {
-    let device = unsafe {
-        enumerator
-            .GetDefaultAudioEndpoint(eRender, eConsole)
-            .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
-    };
-    let session_manager = unsafe {
-        device
-            .Activate::<windows::Win32::Media::Audio::IAudioSessionManager2>(CLSCTX_ALL, None)
-            .map_err(|e| anyhow::anyhow!("Activate IAudioSessionManager2: {e}"))?
-    };
-    let session_enum = unsafe {
-        session_manager
-            .GetSessionEnumerator()
-            .map_err(|e| anyhow::anyhow!("GetSessionEnumerator: {e}"))?
-    };
-    let count = unsafe {
-        session_enum
-            .GetCount()
-            .map_err(|e| anyhow::anyhow!("GetCount: {e}"))?
-    };
-
-    let name_lower = name.to_lowercase();
-    for i in 0..count {
-        let session_ctrl = unsafe {
-            session_enum
-                .GetSession(i)
-                .map_err(|e| anyhow::anyhow!("GetSession: {e}"))?
-        };
-        let display_name = unsafe {
-            session_ctrl
-                .GetDisplayName()
-                .ok()
-                .and_then(|p| p.to_string().ok())
-                .unwrap_or_default()
-        };
-        if display_name.to_lowercase().contains(&name_lower) {
-            let simple_vol: windows::Win32::Media::Audio::ISimpleAudioVolume =
-                session_ctrl.cast().map_err(|e| anyhow::anyhow!("cast ISimpleAudioVolume: {e}"))?;
-            unsafe {
-                simple_vol
-                    .SetMute(muted, std::ptr::null())
-                    .map_err(|e| anyhow::anyhow!("SetMute: {e}"))?;
-            }
-            return Ok(());
-        }
+    let vol = find_session_by_name(enumerator, name)?;
+    unsafe {
+        vol.SetMute(muted, std::ptr::null())
+            .map_err(|e| anyhow::anyhow!("SetMute: {e}"))
     }
-    anyhow::bail!("No audio session matching '{name}' found")
 }
 
-/// Get the mute state of the audio session whose display name contains `name`.
 fn get_session_muted_by_name(
     enumerator: &IMMDeviceEnumerator,
     name: &str,
 ) -> anyhow::Result<bool> {
-    let device = unsafe {
-        enumerator
-            .GetDefaultAudioEndpoint(eRender, eConsole)
-            .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
-    };
-    let session_manager = unsafe {
-        device
-            .Activate::<windows::Win32::Media::Audio::IAudioSessionManager2>(CLSCTX_ALL, None)
-            .map_err(|e| anyhow::anyhow!("Activate IAudioSessionManager2: {e}"))?
-    };
-    let session_enum = unsafe {
-        session_manager
-            .GetSessionEnumerator()
-            .map_err(|e| anyhow::anyhow!("GetSessionEnumerator: {e}"))?
-    };
-    let count = unsafe {
-        session_enum
-            .GetCount()
-            .map_err(|e| anyhow::anyhow!("GetCount: {e}"))?
-    };
-
-    let name_lower = name.to_lowercase();
-    for i in 0..count {
-        let session_ctrl = unsafe {
-            session_enum
-                .GetSession(i)
-                .map_err(|e| anyhow::anyhow!("GetSession: {e}"))?
-        };
-        let display_name = unsafe {
-            session_ctrl
-                .GetDisplayName()
-                .ok()
-                .and_then(|p| p.to_string().ok())
-                .unwrap_or_default()
-        };
-        if display_name.to_lowercase().contains(&name_lower) {
-            let simple_vol: windows::Win32::Media::Audio::ISimpleAudioVolume =
-                session_ctrl.cast().map_err(|e| anyhow::anyhow!("cast ISimpleAudioVolume: {e}"))?;
-            let muted: BOOL = unsafe {
-                simple_vol.GetMute().unwrap_or(BOOL(0))
-            };
-            return Ok(muted.as_bool());
-        }
-    }
-    anyhow::bail!("No audio session matching '{name}' found")
+    let vol = find_session_by_name(enumerator, name)?;
+    let muted: BOOL = unsafe { vol.GetMute().unwrap_or(BOOL(0)) };
+    Ok(muted.as_bool())
 }
 
-/// Get the volume of the audio session whose display name contains `name`.
 fn get_session_volume_by_name(
     enumerator: &IMMDeviceEnumerator,
     name: &str,
 ) -> anyhow::Result<f64> {
-    let device = unsafe {
-        enumerator
-            .GetDefaultAudioEndpoint(eRender, eConsole)
-            .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
-    };
-    let session_manager = unsafe {
-        device
-            .Activate::<windows::Win32::Media::Audio::IAudioSessionManager2>(CLSCTX_ALL, None)
-            .map_err(|e| anyhow::anyhow!("Activate IAudioSessionManager2: {e}"))?
-    };
-    let session_enum = unsafe {
-        session_manager
-            .GetSessionEnumerator()
-            .map_err(|e| anyhow::anyhow!("GetSessionEnumerator: {e}"))?
-    };
-    let count = unsafe {
-        session_enum
-            .GetCount()
-            .map_err(|e| anyhow::anyhow!("GetCount: {e}"))?
-    };
-
-    let name_lower = name.to_lowercase();
-    for i in 0..count {
-        let session_ctrl = unsafe {
-            session_enum
-                .GetSession(i)
-                .map_err(|e| anyhow::anyhow!("GetSession: {e}"))?
-        };
-        let display_name = unsafe {
-            session_ctrl
-                .GetDisplayName()
-                .ok()
-                .and_then(|p| p.to_string().ok())
-                .unwrap_or_default()
-        };
-        if display_name.to_lowercase().contains(&name_lower) {
-            let simple_vol: windows::Win32::Media::Audio::ISimpleAudioVolume =
-                session_ctrl.cast().map_err(|e| anyhow::anyhow!("cast ISimpleAudioVolume: {e}"))?;
-            let vol = unsafe {
-                simple_vol.GetMasterVolume().unwrap_or(0.0) as f64
-            };
-            return Ok(vol);
-        }
-    }
-    anyhow::bail!("No audio session matching '{name}' found")
+    let vol = find_session_by_name(enumerator, name)?;
+    Ok(unsafe { vol.GetMasterVolume().unwrap_or(0.0) } as f64)
 }
