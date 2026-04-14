@@ -39,12 +39,16 @@ impl PulseAudioBackend {
 /// Dropped automatically when it goes out of scope.
 struct PulseConn {
     mainloop: Mainloop,
-    // Context is kept alive but only used via the mainloop lock.
-    _context: Context,
+    /// PulseAudio context — accessed via `self.context.introspect()` under the mainloop lock.
+    context: Context,
 }
 
-// SAFETY: PulseConn is only used on one thread at a time (we hold the mainloop
-// lock during all operations). The Rc inside libpulse is hidden behind the lock.
+// SAFETY: PulseConn is created and consumed within a single method call
+// (connect → use → drop) and is never shared between threads concurrently.
+// The internal Rc<MainloopInner> inside libpulse's Context is never exposed
+// or cloned outside of the mainloop lock, which is held during all
+// Context/Introspect operations.
+// TODO: consider wrapping PulseAudio ops in a dedicated thread to eliminate this unsafe impl
 unsafe impl Send for PulseConn {}
 
 impl PulseConn {
@@ -78,7 +82,7 @@ impl PulseConn {
 
         Ok(Self {
             mainloop,
-            _context: context,
+            context,
         })
     }
 
@@ -88,7 +92,7 @@ impl PulseConn {
         let result_c = result.clone();
 
         self.mainloop.lock();
-        let introspect = self._context.introspect();
+        let introspect = self.context.introspect();
 
         let op = introspect.get_sink_info_list(move |item| {
             if let pa::callbacks::ListResult::Item(info) = item {
@@ -119,7 +123,7 @@ impl PulseConn {
         let result_c = result.clone();
 
         self.mainloop.lock();
-        let introspect = self._context.introspect();
+        let introspect = self.context.introspect();
 
         let op = introspect.get_source_info_list(move |item| {
             if let pa::callbacks::ListResult::Item(info) = item {
@@ -150,7 +154,7 @@ impl PulseConn {
         let result_c = result.clone();
 
         self.mainloop.lock();
-        let introspect = self._context.introspect();
+        let introspect = self.context.introspect();
 
         let op = introspect.get_sink_input_info_list(move |item| {
             if let pa::callbacks::ListResult::Item(info) = item {
@@ -176,7 +180,7 @@ impl PulseConn {
 
     fn set_sink_volume_by_name(&mut self, name: &str, cvols: &ChannelVolumes) -> anyhow::Result<()> {
         self.mainloop.lock();
-        let mut introspect = self._context.introspect();
+        let mut introspect = self.context.introspect();
 
         let op = introspect.set_sink_volume_by_name(name, cvols, None);
         loop {
@@ -191,7 +195,7 @@ impl PulseConn {
 
     fn set_sink_input_volume(&mut self, index: u32, cvols: &ChannelVolumes) -> anyhow::Result<()> {
         self.mainloop.lock();
-        let mut introspect = self._context.introspect();
+        let mut introspect = self.context.introspect();
 
         let op = introspect.set_sink_input_volume(index, cvols, None);
         loop {
@@ -206,7 +210,7 @@ impl PulseConn {
 
     fn set_sink_mute_by_name(&mut self, name: &str, mute: bool) -> anyhow::Result<()> {
         self.mainloop.lock();
-        let mut introspect = self._context.introspect();
+        let mut introspect = self.context.introspect();
 
         let op = introspect.set_sink_mute_by_name(name, mute, None);
         loop {
@@ -225,7 +229,7 @@ impl PulseConn {
         let result_c = result.clone();
 
         self.mainloop.lock();
-        let introspect = self._context.introspect();
+        let introspect = self.context.introspect();
 
         let op = introspect.get_server_info(move |info: &pa::context::introspect::ServerInfo<'_>| {
             *result_c.lock().unwrap() = Some(info.clone().to_owned());
@@ -298,7 +302,7 @@ impl VolumeControl for PulseAudioBackend {
                 conn.set_sink_mute_by_name(&sink_name, muted)
             }
             AudioTarget::Device { id } => conn.set_sink_mute_by_name(id, muted),
-            _ => {
+            AudioTarget::Application { .. } | AudioTarget::FocusedApplication => {
                 warn!(?target, "Mute not supported for this target on Linux");
                 Ok(())
             }
@@ -319,7 +323,10 @@ impl VolumeControl for PulseAudioBackend {
                     .to_string()
             }
             AudioTarget::Device { id } => id.clone(),
-            _ => return Ok(false),
+            AudioTarget::Application { .. } | AudioTarget::FocusedApplication => {
+                warn!(?target, "Mute query not supported for this target on Linux");
+                return Ok(false);
+            }
         };
 
         Ok(sinks

@@ -14,7 +14,7 @@ members = [
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/midium/midium"
+repository = "https://github.com/majorsimon/midium"
 
 [workspace.dependencies]
 # Shared

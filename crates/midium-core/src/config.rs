@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::types::{FaderGroup, Mapping};
 
 /// Top-level application configuration (config.toml).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub general: GeneralConfig,
@@ -42,7 +42,7 @@ pub struct AudioConfig {
     pub smoothing: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PluginsConfig {
     #[serde(default)]
     pub enabled: Vec<String>,
@@ -51,7 +51,7 @@ pub struct PluginsConfig {
 }
 
 /// Mappings file (mappings.toml).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MappingsConfig {
     #[serde(default)]
     pub mappings: Vec<Mapping>,
@@ -64,17 +64,6 @@ fn default_true() -> bool { true }
 fn default_log_level() -> String { "info".into() }
 fn default_poll_interval() -> u64 { 2 }
 fn default_refresh_interval() -> u64 { 5 }
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            general: GeneralConfig::default(),
-            midi: MidiConfig::default(),
-            audio: AudioConfig::default(),
-            plugins: PluginsConfig::default(),
-        }
-    }
-}
 
 impl Default for GeneralConfig {
     fn default() -> Self {
@@ -100,21 +89,6 @@ impl Default for AudioConfig {
             refresh_interval_secs: default_refresh_interval(),
             smoothing: 0.0,
         }
-    }
-}
-
-impl Default for PluginsConfig {
-    fn default() -> Self {
-        Self {
-            enabled: Vec::new(),
-            plugin_dirs: Vec::new(),
-        }
-    }
-}
-
-impl Default for MappingsConfig {
-    fn default() -> Self {
-        Self { mappings: Vec::new(), fader_groups: Vec::new() }
     }
 }
 
@@ -160,6 +134,17 @@ pub fn load_config() -> anyhow::Result<AppConfig> {
     }
 }
 
+/// Load mappings from the config directory.
+pub fn load_mappings() -> anyhow::Result<MappingsConfig> {
+    let path = config_dir().join("mappings.toml");
+    if path.exists() {
+        let content = std::fs::read_to_string(&path)?;
+        Ok(toml::from_str(&content)?)
+    } else {
+        Ok(MappingsConfig::default())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,16 +187,5 @@ mod tests {
         let toml_str = toml::to_string(&config).expect("serialize");
         println!("--- Toggle Note TOML ---\n{toml_str}---");
         let _back: MappingsConfig = toml::from_str(&toml_str).expect("deserialize");
-    }
-}
-
-/// Load mappings from the config directory.
-pub fn load_mappings() -> anyhow::Result<MappingsConfig> {
-    let path = config_dir().join("mappings.toml");
-    if path.exists() {
-        let content = std::fs::read_to_string(&path)?;
-        Ok(toml::from_str(&content)?)
-    } else {
-        Ok(MappingsConfig::default())
     }
 }

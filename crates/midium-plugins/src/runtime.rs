@@ -182,11 +182,14 @@ impl PluginRuntime {
 fn apply_sandbox(lua: &Lua) -> LuaResult<()> {
     let g = lua.globals();
 
-    for key in ["io", "debug", "loadfile", "dofile"] {
+    // Remove dangerous stdlib modules and functions.
+    // `package`/`require` would allow loading arbitrary Lua/C modules from disk.
+    for key in ["io", "debug", "loadfile", "dofile", "package", "require"] {
         g.set(key, LuaNil)?;
     }
 
-    // Restrict `os` to safe subset
+    // Restrict `os` to a safe subset — only `clock` and `time` are kept.
+    // Excluded: execute, getenv, remove, rename, tmpname, setlocale, exit.
     if let Ok(os_orig) = g.get::<LuaTable>("os") {
         let os_safe = lua.create_table()?;
         for key in ["clock", "time"] {
@@ -345,6 +348,10 @@ fn build_api(
 // Audio target string → enum
 // ---------------------------------------------------------------------------
 
+/// Parse the Lua-facing audio target string into an `AudioTarget` enum.
+///
+/// Accepted formats: `"master"`, `"system"`, `"focused"`, `"app:<name>"`, `"device:<id>"`.
+/// Unknown strings fall back to `SystemMaster`.
 fn parse_target(s: &str) -> AudioTarget {
     match s {
         "master" | "system" => AudioTarget::SystemMaster,

@@ -205,10 +205,14 @@ fn default_transform() -> ValueTransform {
 #[derive(Debug, Clone)]
 pub enum AppEvent {
     Midi(MidiEvent),
+    /// Published when an audio backend detects an external volume change.
+    /// Currently handled in the Tauri event bridge but not yet emitted by any backend.
     VolumeChanged {
         target: AudioTarget,
         volume: f64,
     },
+    /// Published when an audio backend detects an external mute state change.
+    /// Not yet emitted by any backend.
     MuteChanged {
         target: AudioTarget,
         muted: bool,
@@ -266,7 +270,6 @@ pub struct AudioCapabilities {
 mod tests {
     use super::*;
 
-    // Bug: Logarithmic formula divided by zero, mapping every value to 0.0
     #[test]
     fn log_transform_full_range() {
         let t = ValueTransform::Logarithmic;
@@ -278,7 +281,6 @@ mod tests {
         assert_eq!(t.apply(127, 0.0), Some(1.0));
     }
 
-    // Bug: Toggle fired on both press (raw=127) and release (raw=0)
     #[test]
     fn toggle_suppresses_release() {
         let t = ValueTransform::Toggle;
@@ -288,7 +290,6 @@ mod tests {
         assert_eq!(t.apply(0, 1.0), None);
     }
 
-    // Momentary should only fire on press
     #[test]
     fn momentary_suppresses_release() {
         let t = ValueTransform::Momentary;

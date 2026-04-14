@@ -54,6 +54,8 @@ struct TapState {
     tap_id: AudioObjectID,
     aggregate_device_id: AudioObjectID,
     /// Volume multiplier stored as bit-cast f64 for lock-free audio thread access.
+    /// AtomicU64 is used instead of AtomicF64 (which doesn't exist in std) — we
+    /// convert via f64::to_bits() / f64::from_bits() for atomic load/store.
     volume: Arc<AtomicU64>,
     muted: Arc<AtomicU64>,
     io_proc_id: Option<AudioDeviceIOProcID>,
@@ -102,6 +104,12 @@ impl Drop for TapState {
 
 pub struct AudioTapManager {
     taps: Arc<Mutex<HashMap<String, TapState>>>,
+}
+
+impl Default for AudioTapManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AudioTapManager {
@@ -265,7 +273,7 @@ impl AudioTapManager {
         let mut tap_id: AudioObjectID = kAudioObjectUnknown;
         let status = unsafe {
             AudioHardwareCreateProcessTap(
-                Retained::as_ptr(&tap_desc) as *const AnyObject,
+                Retained::as_ptr(&tap_desc),
                 &mut tap_id,
             )
         };
@@ -463,8 +471,8 @@ fn create_tap_description(pid: u32) -> anyhow::Result<Retained<AnyObject>> {
             anyhow::bail!("initStereoMixdownOfProcesses returned nil");
         }
 
-        Ok(Retained::from_raw(desc)
-            .ok_or_else(|| anyhow::anyhow!("Failed to retain CATapDescription"))?)
+        Retained::from_raw(desc)
+            .ok_or_else(|| anyhow::anyhow!("Failed to retain CATapDescription"))
     }
 }
 
