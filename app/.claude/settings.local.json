@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/simon.major/development/scratch/midimixer-audit/**)",
+      "Bash(cargo check:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(GH_HOST=github.com gh pr checks 8)",
+      "Bash(GH_HOST=github.com gh run view 24410656524)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(npx svelte-check:*)"
+    ]
+  }
+}

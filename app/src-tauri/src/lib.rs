@@ -433,6 +433,23 @@ fn set_shortcut(
     Ok(())
 }
 
+#[tauri::command]
+fn get_autostart(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let manager = app.autolaunch();
+    if enabled {
+        manager.enable().map_err(|e| e.to_string())
+    } else {
+        manager.disable().map_err(|e| e.to_string())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // App entry point
 // ---------------------------------------------------------------------------
@@ -441,6 +458,10 @@ fn set_shortcut(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(|app| {
             tracing_subscriber::fmt()
                 .with_env_filter(
@@ -544,6 +565,16 @@ pub fn run() {
                 }
             }
 
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                let autostart_manager = app.autolaunch();
+                if app_config.general.autostart {
+                    let _ = autostart_manager.enable();
+                } else {
+                    let _ = autostart_manager.disable();
+                }
+            }
+
             setup_tray(app)?;
 
             // Minimise to tray on close
@@ -641,6 +672,8 @@ pub fn run() {
             save_config,
             get_shortcut,
             set_shortcut,
+            get_autostart,
+            set_autostart,
             list_plugins,
             list_profiles,
             send_midi,
