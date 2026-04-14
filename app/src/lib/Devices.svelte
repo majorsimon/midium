@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from "svelte";
+  import { createEventDispatcher, onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import type { DeviceProfile, ProfileControl, ProfileControlType } from "./types";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import type { DeviceProfile, MidiEvent, ProfileControl, ProfileControlType } from "./types";
 
   /** List of connected MIDI port names — passed in from +page.svelte. */
   export let connectedDevices: string[] = [];
@@ -20,11 +21,42 @@
 
   let profiles: DeviceProfile[] = [];
   let selectedDevice: string | null = null;
+  let lastValues: Record<string, number> = {};
+
+  const unlistens: UnlistenFn[] = [];
+
+  function controlKey(channel: number, midiType: string, number: number): string {
+    return `${channel}:${midiType}:${number}`;
+  }
+
+  function lastValueForControl(ctrl: ProfileControl): number | undefined {
+    return lastValues[controlKey(ctrl.channel, ctrl.midi_type ?? "cc", ctrl.number)];
+  }
 
   onMount(async () => {
     profiles = await invoke<DeviceProfile[]>("list_profiles").catch(() => []);
     if (connectedDevices.length > 0) selectedDevice = connectedDevices[0];
+
+    const unlisten = await listen<MidiEvent>("midi-event", (e) => {
+      const { channel, message } = e.payload;
+      if (message.ControlChange) {
+        const { control, value } = message.ControlChange;
+        lastValues[controlKey(channel, "cc", control)] = value;
+        lastValues = lastValues;
+      } else if (message.NoteOn) {
+        const { note, velocity } = message.NoteOn;
+        lastValues[controlKey(channel, "note", note)] = velocity;
+        lastValues = lastValues;
+      } else if (message.NoteOff) {
+        const { note } = message.NoteOff;
+        lastValues[controlKey(channel, "note", note)] = 0;
+        lastValues = lastValues;
+      }
+    });
+    unlistens.push(unlisten);
   });
+
+  onDestroy(() => unlistens.forEach(u => u()));
 
   // Re-select when devices change.
   $: if (connectedDevices.length > 0 && !selectedDevice) {
@@ -171,6 +203,9 @@
                           {ctrl.midi_type === "note" ? `Note ${ctrl.number}` : `CC ${ctrl.number}`}
                           {ctrl.channel > 0 ? ` ch${ctrl.channel + 1}` : ""}
                         </span>
+                        {#if lastValueForControl(ctrl) !== undefined}
+                          <span class="ctrl-val">= {lastValueForControl(ctrl)}</span>
+                        {/if}
                       </button>
                     {/each}
                   </div>
@@ -372,6 +407,7 @@
     text-align: center;
     white-space: nowrap;
   }
+  .ctrl-val { color: var(--accent); font-weight: 700; }
 
   /* Unknown device */
   .unknown-card { padding: 20px 24px; }
