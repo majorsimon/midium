@@ -329,6 +329,12 @@ impl VolumeControl for PulseAudioBackend {
             .unwrap_or(false))
     }
 
+    fn is_default_output(&self, device_id: &str) -> anyhow::Result<bool> {
+        let mut conn = PulseConn::connect()?;
+        let server = conn.get_server_info()?;
+        Ok(server.default_sink_name.as_deref().unwrap_or("") == device_id)
+    }
+
     fn set_default_output(&self, device_id: &str) -> anyhow::Result<()> {
         // pactl uses the sink name as device ID on Linux
         let output = std::process::Command::new("pactl")

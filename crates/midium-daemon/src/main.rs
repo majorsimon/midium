@@ -4,14 +4,40 @@ use std::sync::Arc;
 use tokio::signal;
 use tracing::{error, info, warn};
 
-use midium_audio::create_backend;
+use midium_audio::{backend::AudioBackend, create_backend};
 use midium_core::config::config_dir;
-use midium_core::dispatch::ActionDispatcher;
+use midium_core::dispatch::{ActionDispatcher, VolumeControl};
 use midium_core::event_bus::EventBus;
 use midium_core::mapping::MappingEngine;
-use midium_core::types::AppEvent;
+use midium_core::types::{AppEvent, AudioTarget};
 use midium_midi::manager::MidiManager;
 use midium_midi::profile::load_profiles;
+use midium_midi::GroupManager;
+
+/// Thin adapter so `Arc<dyn AudioBackend>` can be shared between dispatcher
+/// and GroupManager as a `Box<dyn VolumeControl>`.
+struct ArcAudio(Arc<dyn AudioBackend>);
+
+impl VolumeControl for ArcAudio {
+    fn set_volume(&self, t: &AudioTarget, v: f64) -> anyhow::Result<()> {
+        self.0.set_volume(t, v)
+    }
+    fn set_mute(&self, t: &AudioTarget, m: bool) -> anyhow::Result<()> {
+        self.0.set_mute(t, m)
+    }
+    fn is_muted(&self, t: &AudioTarget) -> anyhow::Result<bool> {
+        self.0.is_muted(t)
+    }
+    fn set_default_output(&self, id: &str) -> anyhow::Result<()> {
+        self.0.set_default_output(id)
+    }
+    fn set_default_input(&self, id: &str) -> anyhow::Result<()> {
+        self.0.set_default_input(id)
+    }
+    fn is_default_output(&self, id: &str) -> anyhow::Result<bool> {
+        self.0.is_default_output(id)
+    }
+}
 
 fn main() -> anyhow::Result<()> {
     // Very lightweight CLI arg parsing — no external dep needed for two flags.
@@ -115,6 +141,7 @@ fn main() -> anyhow::Result<()> {
         }
     };
     info!(count = mappings_config.mappings.len(), "Loaded mappings");
+    info!(count = mappings_config.fader_groups.len(), "Loaded fader groups");
 
     // Set up the mapping engine
     let mut mapping_engine = MappingEngine::new(event_bus.clone());
@@ -178,6 +205,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Build the tokio runtime and run async code
+    let fader_groups = mappings_config.fader_groups;
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
@@ -186,6 +214,7 @@ fn main() -> anyhow::Result<()> {
             mapping_engine,
             audio_backend,
             all_profiles,
+            fader_groups,
             config.midi.poll_interval_secs,
         ))
 }
@@ -195,12 +224,28 @@ async fn async_main(
     mut mapping_engine: MappingEngine,
     audio_backend: Box<dyn midium_audio::backend::AudioBackend>,
     profiles: Vec<midium_midi::profile::DeviceProfile>,
+    fader_groups: Vec<midium_core::types::FaderGroup>,
     midi_poll_interval_secs: u64,
 ) -> anyhow::Result<()> {
-    let dispatcher = Arc::new(ActionDispatcher::new(audio_backend));
+    // Wrap in Arc so it can be shared between dispatcher and GroupManager.
+    let audio_arc: Arc<dyn AudioBackend> = Arc::from(audio_backend);
+    let dispatcher = Arc::new(ActionDispatcher::new(Box::new(ArcAudio(audio_arc.clone()))));
+
+    let profiles_arc = Arc::new(profiles);
+
+    // Spawn GroupManager
+    let group_manager = GroupManager::new(
+        fader_groups,
+        profiles_arc.clone(),
+        Box::new(ArcAudio(audio_arc.clone())),
+        event_bus.clone(),
+    );
+    tokio::spawn(async move {
+        group_manager.run().await;
+    });
 
     // Spawn MIDI manager
-    let midi_manager = MidiManager::new(event_bus.clone(), midi_poll_interval_secs, profiles);
+    let midi_manager = MidiManager::new(event_bus.clone(), midi_poll_interval_secs, (*profiles_arc).clone());
     let midi_handle = tokio::spawn(async move {
         midi_manager.run().await;
     });

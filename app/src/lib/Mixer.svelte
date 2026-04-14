@@ -11,6 +11,7 @@
     AudioCapabilities,
     Mapping,
     DeviceProfile,
+    FaderGroup,
   } from "./types";
 
   // ---------------------------------------------------------------------------
@@ -28,11 +29,17 @@
   };
 
   // ---------------------------------------------------------------------------
-  // Mapping + profile state
+  // Mapping + profile + fader group state
   // ---------------------------------------------------------------------------
 
   let profiles: DeviceProfile[] = [];
   let mappings: Mapping[] = [];
+  let faderGroups: FaderGroup[] = [];
+
+  // Live state for fader group strips
+  let groupVolumes: number[] = [];
+  let groupMuted: boolean[] = [];
+  let groupIsDefault: boolean[] = [];
 
   // ---------------------------------------------------------------------------
   // Derived strips — one strip per SetVolume mapping (order = mapping order)
@@ -81,6 +88,37 @@
   $: derivedStrips = mappings
     .map(m => ({ mapping: m, svTargets: getSetVolumeTargets(m.action) }))
     .filter(s => s.svTargets.length > 0);
+
+  // ---------------------------------------------------------------------------
+  // Unified ordered strip list — sorted by CC/control number ascending.
+  // Mapping strips use the CC number from their control; fader group strips
+  // use their group number (shifted high so they sort after mappings with
+  // the same number, but still in group order).
+  // ---------------------------------------------------------------------------
+
+  type UnifiedStrip =
+    | { kind: "mapping"; mappingIdx: number; sortKey: number }
+    | { kind: "group"; groupIdx: number; sortKey: number };
+
+  function mappingCc(m: Mapping): number {
+    const ct = m.control.control_type;
+    if (typeof ct === "object" && "CC" in ct) return (ct as { CC: number }).CC;
+    if (typeof ct === "object" && "Note" in ct) return (ct as { Note: number }).Note;
+    return Infinity;
+  }
+
+  $: stripOrder = [
+    ...derivedStrips.map((_, i) => ({
+      kind: "mapping" as const,
+      mappingIdx: i,
+      sortKey: mappingCc(derivedStrips[i].mapping),
+    })),
+    ...faderGroups.map((g, i) => ({
+      kind: "group" as const,
+      groupIdx: i,
+      sortKey: 10000 + g.group,
+    })),
+  ].sort((a, b) => a.sortKey - b.sortKey);
 
   // Primary target — used for volume-reading, mute-state, and LED lookup.
   function primaryStripTarget(svTargets: AudioTarget[]): StripTarget {
@@ -249,6 +287,30 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Fader group strip handlers
+  // ---------------------------------------------------------------------------
+
+  async function handleGroupVolumeChange(i: number, v: number) {
+    const g = faderGroups[i];
+    groupVolumes[i] = v;
+    await invoke("set_volume", { target: g.target, volume: v }).catch(console.error);
+  }
+
+  async function handleGroupMuteToggle(i: number) {
+    const g = faderGroups[i];
+    groupMuted[i] = !groupMuted[i];
+    groupMuted = groupMuted;
+    await invoke("toggle_mute", { target: g.target }).catch(console.error);
+  }
+
+  async function handleGroupRClick(i: number) {
+    const devId = groupDeviceId(faderGroups[i]);
+    if (!devId) return;
+    await invoke("set_default_output", { deviceId: devId }).catch(console.error);
+    await refreshGroupState();
+  }
+
+  // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
 
@@ -270,14 +332,46 @@
   }
 
   async function loadMappings() {
-    [profiles, mappings] = await Promise.all([
+    [profiles, mappings, faderGroups] = await Promise.all([
       invoke<DeviceProfile[]>("list_profiles").catch(() => [] as DeviceProfile[]),
       invoke<Mapping[]>("get_mappings").catch(() => [] as Mapping[]),
+      invoke<FaderGroup[]>("get_fader_groups").catch(() => [] as FaderGroup[]),
     ]);
+    await refreshGroupState();
   }
 
+  function groupDeviceId(g: FaderGroup): string | null {
+    if (typeof g.target === "object" && "Device" in g.target) return g.target.Device.id;
+    return null;
+  }
+
+  async function refreshGroupState() {
+    if (faderGroups.length === 0) return;
+    [groupVolumes, groupMuted] = await Promise.all([
+      Promise.all(faderGroups.map(g => invoke<number>("get_volume", { target: g.target }).catch(() => 0.8))),
+      Promise.all(faderGroups.map(g => invoke<boolean>("get_muted", { target: g.target }).catch(() => false))),
+    ]);
+    const allDevices = await invoke<AudioDeviceInfo[]>("list_output_devices").catch(() => devices);
+    groupIsDefault = faderGroups.map(g => {
+      const devId = groupDeviceId(g);
+      if (!devId) return false;
+      return allDevices.find(d => d.id === devId)?.is_default ?? false;
+    });
+  }
+
+  $: groupLabels = faderGroups.map(g => {
+    if (g.target === "SystemMaster") return "Master";
+    if (g.target === "FocusedApplication") return "Focused";
+    if (typeof g.target === "object" && "Application" in g.target) return g.target.Application.name;
+    if (typeof g.target === "object" && "Device" in g.target)
+      return devices.find(d => d.id === (g.target as { Device: { id: string } }).Device.id)?.name
+        ?? (g.target as { Device: { id: string } }).Device.id;
+    return "?";
+  });
+
   onMount(async () => {
-    await Promise.all([loadState(), loadMappings()]);
+    await loadState();
+    await loadMappings();
     await syncAllLeds();
 
     refreshTimer = setInterval(async () => {
@@ -292,6 +386,7 @@
       }
       // Refresh mappings so new entries added in the Mappings tab appear immediately
       await loadMappings();
+      await refreshGroupState();
     }, 3000);
 
     unlistens.push(
@@ -300,6 +395,7 @@
       }),
       await listen<string>("device-connected", async () => {
         await loadState();
+        await refreshGroupState();
         await syncAllLeds();
       }),
       await listen<string>("device-disconnected", () => loadState()),
@@ -313,30 +409,52 @@
 </script>
 
 <div class="mixer">
-  {#if derivedStrips.length === 0}
+  {#if derivedStrips.length === 0 && faderGroups.length === 0}
     <div class="empty-state card">
       No fader mappings yet.<br>
-      Go to <strong>Mappings</strong> and add a <em>Set Volume</em> action to see strips here.
+      Go to <strong>Mappings</strong> and add a <em>Set Volume</em> action, or configure <strong>Groups</strong> to see strips here.
     </div>
   {:else}
     <div class="strips-row">
-      {#each derivedStrips as strip, i}
-        {@const pt = primaryStripTarget(strip.svTargets)}
-        <ChannelStrip
-          label={targetsLabel(strip.svTargets)}
-          volume={stripVolumes[i]}
-          muted={stripMuted[i]}
-          active={stripActive[i]}
-          assigned={true}
-          isMaster={pt === "master"}
-          unavailable={isDeviceTarget(pt) ? !caps.device_switching : (pt !== "master" && !caps.per_app_volume)}
-          showFader={!isDeviceTarget(pt)}
-          showS={false}
-          rClickable={isDeviceTarget(pt)}
-          on:volume-change={(e) => handleVolumeChange(i, e.detail)}
-          on:mute-toggle={() => handleMuteToggle(i)}
-          on:r-click={() => handleRClick(i)}
-        />
+      {#each stripOrder as s}
+        {#if s.kind === "mapping"}
+          {@const strip = derivedStrips[s.mappingIdx]}
+          {@const pt = primaryStripTarget(strip.svTargets)}
+          <ChannelStrip
+            label={targetsLabel(strip.svTargets)}
+            volume={stripVolumes[s.mappingIdx]}
+            muted={stripMuted[s.mappingIdx]}
+            active={stripActive[s.mappingIdx]}
+            assigned={true}
+            isMaster={pt === "master"}
+            unavailable={isDeviceTarget(pt) ? !caps.device_switching : (pt !== "master" && !caps.per_app_volume)}
+            showFader={!isDeviceTarget(pt)}
+            showS={false}
+            rClickable={isDeviceTarget(pt)}
+            on:volume-change={(e) => handleVolumeChange(s.mappingIdx, e.detail)}
+            on:mute-toggle={() => handleMuteToggle(s.mappingIdx)}
+            on:r-click={() => handleRClick(s.mappingIdx)}
+          />
+        {:else}
+          {@const g = faderGroups[s.groupIdx]}
+          {@const devId = groupDeviceId(g)}
+          {@const isDevice = devId !== null}
+          <ChannelStrip
+            label={groupLabels[s.groupIdx]}
+            volume={groupVolumes[s.groupIdx] ?? 0.8}
+            muted={groupMuted[s.groupIdx] ?? false}
+            active={isDevice ? (groupIsDefault[s.groupIdx] ?? false) : !(groupMuted[s.groupIdx] ?? false)}
+            assigned={true}
+            isMaster={g.target === "SystemMaster"}
+            unavailable={isDevice ? !caps.device_switching : false}
+            showFader={true}
+            showS={false}
+            rClickable={isDevice}
+            on:volume-change={(e) => handleGroupVolumeChange(s.groupIdx, e.detail)}
+            on:mute-toggle={() => handleGroupMuteToggle(s.groupIdx)}
+            on:r-click={() => handleGroupRClick(s.groupIdx)}
+          />
+        {/if}
       {/each}
     </div>
   {/if}
