@@ -360,6 +360,7 @@ fn set_default_endpoint(device_id: &str) -> anyhow::Result<()> {
         for role in [eConsole, eMultimedia, eCommunications] {
             policy
                 .SetDefaultEndpoint(PCWSTR(id_wide.as_ptr()), role)
+                .ok()
                 .map_err(|e| anyhow::anyhow!("SetDefaultEndpoint: {e}"))?;
         }
     }
