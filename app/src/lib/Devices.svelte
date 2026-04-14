@@ -41,11 +41,12 @@
     if (connectedDevices.length > 0) selectedDevice = connectedDevices[0];
 
     unlistens.push(await listen<MidiEvent>("midi-event", (e) => {
+      if (selectedDevice && !e.payload.device.includes(selectedDevice)) return;
       const msg = e.payload.message;
       const ch = e.payload.channel;
       if (msg.ControlChange !== undefined) {
         lastValues[controlKey(ch, "cc", msg.ControlChange.control)] = msg.ControlChange.value;
-        lastValues = lastValues; // trigger reactivity
+        lastValues = lastValues;
       } else if (msg.NoteOn !== undefined) {
         lastValues[controlKey(ch, "note", msg.NoteOn.note)] = msg.NoteOn.velocity;
         lastValues = lastValues;

@@ -473,9 +473,10 @@
   {#if caps.device_switching && devices.filter(d => !d.is_input).length > 0}
     <div class="card device-row">
       <span class="device-label">Output</span>
-      <select on:change={(e) => setDefaultOutput(e.currentTarget.value)}>
+      <select value={devices.find(d => !d.is_input && d.is_default)?.id ?? ""}
+              on:change={(e) => setDefaultOutput(e.currentTarget.value)}>
         {#each devices.filter(d => !d.is_input) as dev}
-          <option value={dev.id} selected={dev.is_default}>{dev.name}</option>
+          <option value={dev.id}>{dev.name}</option>
         {/each}
       </select>
     </div>
@@ -485,9 +486,10 @@
   {#if caps.input_device_switching && devices.filter(d => d.is_input).length > 0}
     <div class="card device-row">
       <span class="device-label">Input</span>
-      <select on:change={(e) => setDefaultInput(e.currentTarget.value)}>
+      <select value={devices.find(d => d.is_input && d.is_default)?.id ?? ""}
+              on:change={(e) => setDefaultInput(e.currentTarget.value)}>
         {#each devices.filter(d => d.is_input) as dev}
-          <option value={dev.id} selected={dev.is_default}>{dev.name}</option>
+          <option value={dev.id}>{dev.name}</option>
         {/each}
       </select>
     </div>

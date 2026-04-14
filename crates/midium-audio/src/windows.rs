@@ -274,6 +274,13 @@ impl AudioBackend for WasapiBackend {
 
     fn list_input_devices(&self) -> anyhow::Result<Vec<AudioDeviceInfo>> {
         let enumerator = Self::enumerator()?;
+        let default_device = unsafe {
+            enumerator.GetDefaultAudioEndpoint(eCapture, eConsole).ok()
+        };
+        let default_id = default_device.as_ref().and_then(|d| {
+            unsafe { d.GetId().ok().and_then(|p| p.to_string().ok()) }
+        });
+
         let collection = unsafe {
             enumerator
                 .EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE)
@@ -289,7 +296,7 @@ impl AudioBackend for WasapiBackend {
             };
             devices.push(AudioDeviceInfo {
                 name: Self::device_name(&device),
-                is_default: false,
+                is_default: Some(&id) == default_id.as_ref(),
                 id,
                 is_input: true,
             });
