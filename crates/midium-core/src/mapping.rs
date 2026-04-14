@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use tracing::{debug, trace};
 
 use crate::types::{
-    Action, AppEvent, ControlId, Mapping, MidiEvent, MidiMessage, ValueTransform,
+    Action, AppEvent, ControlId, Mapping, MidiEvent, ValueTransform,
 };
 use crate::event_bus::EventBus;
 
@@ -36,7 +36,7 @@ impl MappingEngine {
     /// Process a MIDI event: look up mapping, apply transform, dispatch action.
     pub fn process_midi_event(&mut self, event: &MidiEvent) {
         let control_id = ControlId::from_event(event);
-        let raw_value = extract_value(&event.message);
+        let raw_value = event.message.raw_value();
 
         // Two-phase lookup: exact match first (O(1) HashMap), then fall back to
         // fuzzy substring match on device name (O(n) scan). This lets users write
@@ -83,15 +83,3 @@ impl MappingEngine {
     }
 }
 
-/// Extract the raw value byte from a MIDI message.
-fn extract_value(msg: &MidiMessage) -> u8 {
-    match msg {
-        MidiMessage::ControlChange { value, .. } => *value,
-        MidiMessage::NoteOn { velocity, .. } => *velocity,
-        MidiMessage::NoteOff { .. } => 0,
-        MidiMessage::PitchBend { value } => {
-            // Map 14-bit (0-16383) to 7-bit (0-127)
-            (*value >> 7) as u8
-        }
-    }
-}

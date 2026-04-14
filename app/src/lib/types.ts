@@ -154,6 +154,29 @@ export function actionLabel(a: Action): string {
 }
 
 // ---------------------------------------------------------------------------
+// Application configuration (mirrors Rust AppConfig)
+// ---------------------------------------------------------------------------
+
+export interface AppConfig {
+  general: {
+    autostart: boolean;
+    log_level: string;
+    shortcut: string | null;
+  };
+  midi: {
+    poll_interval_secs: number;
+    auto_connect: boolean;
+  };
+  audio: {
+    refresh_interval_secs: number;
+  };
+  plugins: {
+    enabled: string[];
+    plugin_dirs: string[];
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Fader groups
 // ---------------------------------------------------------------------------
 

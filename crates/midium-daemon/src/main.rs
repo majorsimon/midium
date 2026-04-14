@@ -1,97 +1,37 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use clap::Parser;
 use tokio::signal;
 use tracing::{error, info, warn};
 
-use midium_audio::{backend::AudioBackend, create_backend};
+use midium_audio::{backend::AudioBackend, create_backend, SharedAudio};
 use midium_core::config::config_dir;
-use midium_core::dispatch::{ActionDispatcher, DeviceLister, VolumeControl};
+use midium_core::dispatch::ActionDispatcher;
 use midium_core::event_bus::EventBus;
 use midium_core::mapping::MappingEngine;
-use midium_core::types::{AppEvent, AudioTarget};
+use midium_core::types::AppEvent;
 use midium_midi::manager::MidiManager;
 use midium_midi::profile::load_profiles;
 use midium_midi::GroupManager;
 
-/// Thin adapter so `Arc<dyn AudioBackend>` can be shared between dispatcher
-/// and GroupManager as a `Box<dyn VolumeControl>`.
-struct ArcAudio(Arc<dyn AudioBackend>);
+/// Headless MIDI mixer daemon — maps MIDI controllers to system audio.
+#[derive(Parser)]
+#[command(name = "midium", version, about)]
+struct Cli {
+    /// Config directory (default: platform config dir)
+    #[arg(short, long, value_name = "PATH")]
+    config: Option<PathBuf>,
 
-impl VolumeControl for ArcAudio {
-    fn set_volume(&self, t: &AudioTarget, v: f64) -> anyhow::Result<()> {
-        self.0.set_volume(t, v)
-    }
-    fn set_mute(&self, t: &AudioTarget, m: bool) -> anyhow::Result<()> {
-        self.0.set_mute(t, m)
-    }
-    fn is_muted(&self, t: &AudioTarget) -> anyhow::Result<bool> {
-        self.0.is_muted(t)
-    }
-    fn set_default_output(&self, id: &str) -> anyhow::Result<()> {
-        self.0.set_default_output(id)
-    }
-    fn set_default_input(&self, id: &str) -> anyhow::Result<()> {
-        self.0.set_default_input(id)
-    }
-    fn is_default_output(&self, id: &str) -> anyhow::Result<bool> {
-        self.0.is_default_output(id)
-    }
-}
-
-impl DeviceLister for ArcAudio {
-    fn list_output_device_ids(&self) -> Vec<(String, bool)> {
-        self.0.list_output_devices()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|d| (d.id, d.is_default))
-            .collect()
-    }
-    fn list_input_device_ids(&self) -> Vec<(String, bool)> {
-        self.0.list_input_devices()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|d| (d.id, d.is_default))
-            .collect()
-    }
+    /// Profiles directory (default: ./profiles or config dir/profiles)
+    #[arg(short, long, value_name = "PATH")]
+    profiles: Option<PathBuf>,
 }
 
 fn main() -> anyhow::Result<()> {
-    // Very lightweight CLI arg parsing — no external dep needed for two flags.
-    let args: Vec<String> = std::env::args().collect();
-    let mut config_path: Option<PathBuf> = None;
-    let mut profiles_dir: Option<PathBuf> = None;
+    let cli = Cli::parse();
 
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--config" | "-c" => {
-                i += 1;
-                config_path = args.get(i).map(PathBuf::from);
-            }
-            "--profiles" | "-p" => {
-                i += 1;
-                profiles_dir = args.get(i).map(PathBuf::from);
-            }
-            "--help" | "-h" => {
-                eprintln!("Usage: midium [OPTIONS]");
-                eprintln!();
-                eprintln!("Options:");
-                eprintln!("  -c, --config <PATH>    Config directory (default: platform config dir)");
-                eprintln!("  -p, --profiles <PATH>  Profiles directory (default: ./profiles)");
-                eprintln!("  -h, --help             Show this help");
-                return Ok(());
-            }
-            other => {
-                eprintln!("Unknown argument: {other}. Use --help for usage.");
-                std::process::exit(1);
-            }
-        }
-        i += 1;
-    }
-
-    // Resolve config directory
-    let cfg_dir = config_path.unwrap_or_else(config_dir);
+    let cfg_dir = cli.config.unwrap_or_else(config_dir);
 
     // Load app config (uses resolved dir override if set)
     let config = if cfg_dir == config_dir() {
@@ -106,11 +46,27 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    // Init tracing
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| config.general.log_level.parse().unwrap_or_default()),
+    // Init tracing — console (human-readable) + file (JSON, daily rotation)
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| config.general.log_level.parse().unwrap_or_default());
+
+    let log_dir = cfg_dir.join("logs");
+    let file_appender = tracing_appender::rolling::daily(&log_dir, "midium.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr),
+        )
+        .with(
+            tracing_subscriber::fmt::layer()
+                .json()
+                .with_writer(non_blocking),
         )
         .init();
 
@@ -120,7 +76,7 @@ fn main() -> anyhow::Result<()> {
     // Load device profiles
     // Search order: --profiles flag > ./profiles (next to binary) > config dir/profiles
     let profiles_search: Vec<PathBuf> = [
-        profiles_dir,
+        cli.profiles,
         // Relative to the current working directory (convenient for dev)
         Some(PathBuf::from("profiles")),
         Some(cfg_dir.join("profiles")),
@@ -221,8 +177,8 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    // Build the tokio runtime and run async code
-    let fader_groups = mappings_config.fader_groups;
+    let mut fader_groups = mappings_config.fader_groups;
+    fader_groups.sort_by_key(|g| g.group);
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
@@ -247,8 +203,8 @@ async fn async_main(
     // Wrap in Arc so it can be shared between dispatcher and GroupManager.
     let audio_arc: Arc<dyn AudioBackend> = Arc::from(audio_backend);
     let dispatcher = Arc::new(
-        ActionDispatcher::new(Box::new(ArcAudio(audio_arc.clone())))
-            .with_device_lister(Box::new(ArcAudio(audio_arc.clone())))
+        ActionDispatcher::new(Box::new(SharedAudio(audio_arc.clone())))
+            .with_device_lister(Box::new(SharedAudio(audio_arc.clone())))
             .with_event_bus(event_bus.clone()),
     );
 
@@ -258,7 +214,7 @@ async fn async_main(
     let group_manager = GroupManager::new(
         fader_groups,
         profiles_arc.clone(),
-        Box::new(ArcAudio(audio_arc.clone())),
+        Box::new(SharedAudio(audio_arc.clone())),
         event_bus.clone(),
     );
     tokio::spawn(async move {

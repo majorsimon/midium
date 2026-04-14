@@ -1,11 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import type { AudioCapabilities } from "./types";
+  import type { AudioCapabilities, AppConfig, DeviceProfile } from "./types";
 
-  import type { DeviceProfile } from "./types";
-
-  let config: any = null;
+  let config: AppConfig | null = null;
   let caps: AudioCapabilities | null = null;
   let profiles: DeviceProfile[] = [];
   let saved = false;
@@ -23,7 +21,7 @@
 
   onMount(async () => {
     [config, caps, profiles] = await Promise.all([
-      invoke("get_config").catch(() => null),
+      invoke<AppConfig>("get_config").catch(() => null),
       invoke<AudioCapabilities>("get_capabilities").catch(() => null),
       invoke<DeviceProfile[]>("list_profiles").catch(() => [] as DeviceProfile[]),
     ]);

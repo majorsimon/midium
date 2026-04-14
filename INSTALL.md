@@ -95,4 +95,4 @@ npm ci
 npm run tauri build
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full dev setup instructions.
+See the project README for full dev setup instructions.

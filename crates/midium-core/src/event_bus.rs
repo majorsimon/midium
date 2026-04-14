@@ -1,7 +1,7 @@
 use tokio::sync::broadcast;
 use crate::types::AppEvent;
 
-const CHANNEL_CAPACITY: usize = 256;
+const CHANNEL_CAPACITY: usize = 2048;
 
 /// Central event bus backed by a tokio broadcast channel.
 ///

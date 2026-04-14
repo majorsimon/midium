@@ -23,6 +23,19 @@ pub enum MidiMessage {
     PitchBend { value: u16 },
 }
 
+impl MidiMessage {
+    /// Extract the raw 0-127 value from a MIDI message.
+    /// Maps 14-bit PitchBend (0-16383) down to 7-bit (0-127).
+    pub fn raw_value(&self) -> u8 {
+        match self {
+            Self::ControlChange { value, .. } => *value,
+            Self::NoteOn { velocity, .. } => *velocity,
+            Self::NoteOff { .. } => 0,
+            Self::PitchBend { value } => (*value >> 7) as u8,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Control Identity — used for mapping lookups
 // ---------------------------------------------------------------------------

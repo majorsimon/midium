@@ -1,10 +1,16 @@
 pub mod backend;
+pub mod shared;
+
+pub use shared::SharedAudio;
 
 #[cfg(target_os = "macos")]
 pub mod macos;
 
 #[cfg(target_os = "macos")]
 pub mod macos_tap;
+
+#[cfg(target_os = "macos")]
+pub(crate) mod macos_utils;
 
 #[cfg(target_os = "linux")]
 pub mod linux;

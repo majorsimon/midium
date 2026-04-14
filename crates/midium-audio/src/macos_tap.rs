@@ -50,6 +50,13 @@ extern "C" {
 // Tap state
 // ---------------------------------------------------------------------------
 
+/// Heap-allocated context passed to the CoreAudio IO proc callback via raw pointer.
+/// Must be freed when the IO proc is destroyed (see `TapState::drop`).
+struct IoContext {
+    volume: Arc<AtomicU64>,
+    muted: Arc<AtomicU64>,
+}
+
 struct TapState {
     tap_id: AudioObjectID,
     aggregate_device_id: AudioObjectID,
@@ -59,7 +66,16 @@ struct TapState {
     volume: Arc<AtomicU64>,
     muted: Arc<AtomicU64>,
     io_proc_id: Option<AudioDeviceIOProcID>,
+    /// Raw pointer to the `IoContext` passed to the IO proc callback.
+    /// Owned by this struct; freed in `Drop`.
+    io_context_ptr: *mut c_void,
 }
+
+// SAFETY: The *mut c_void field (`io_context_ptr`) is an owned heap allocation
+// (created via Box::into_raw) that is never aliased or shared between threads.
+// It is only dereferenced by the CoreAudio IO proc callback (on the audio thread)
+// while the TapState is alive, and freed exclusively in Drop.
+unsafe impl Send for TapState {}
 
 impl Drop for TapState {
     fn drop(&mut self) {
@@ -69,6 +85,12 @@ impl Drop for TapState {
                 AudioDeviceStop(self.aggregate_device_id, io_proc);
                 AudioDeviceDestroyIOProcID(self.aggregate_device_id, io_proc);
             }
+        }
+        // Free the IoContext that was passed to the IO proc callback.
+        // Must happen after destroying the IO proc to ensure the callback
+        // can no longer reference it.
+        if !self.io_context_ptr.is_null() {
+            unsafe { drop(Box::from_raw(self.io_context_ptr as *mut IoContext)) };
         }
         // Destroy aggregate device
         if self.aggregate_device_id != kAudioObjectUnknown {
@@ -292,7 +314,7 @@ impl AudioTapManager {
         let muted = Arc::new(AtomicU64::new(0f64.to_bits()));
 
         // Install IO proc for volume scaling
-        let io_proc_id = install_volume_io_proc(
+        let (io_proc_id, io_context_ptr) = install_volume_io_proc(
             aggregate_device_id,
             Arc::clone(&volume),
             Arc::clone(&muted),
@@ -310,6 +332,7 @@ impl AudioTapManager {
             volume,
             muted,
             io_proc_id: Some(io_proc_id),
+            io_context_ptr,
         };
 
         self.taps.lock().unwrap().insert(name.to_string(), state);
@@ -571,21 +594,15 @@ fn create_aggregate_device_with_tap(tap_uuid: &str) -> anyhow::Result<AudioObjec
 }
 
 /// Install an IO proc that scales audio samples by the volume multiplier.
+/// Returns `(io_proc_id, context_ptr)`. The caller must store `context_ptr`
+/// and free it via `Box::from_raw(context_ptr as *mut IoContext)` after
+/// the IO proc is destroyed.
 fn install_volume_io_proc(
     device_id: AudioObjectID,
     volume: Arc<AtomicU64>,
     muted: Arc<AtomicU64>,
-) -> anyhow::Result<AudioDeviceIOProcID> {
-    // We use a Box to pass the volume/muted Arcs to the C callback
-    struct IoContext {
-        volume: Arc<AtomicU64>,
-        muted: Arc<AtomicU64>,
-    }
-
-    let context = Box::new(IoContext {
-        volume,
-        muted,
-    });
+) -> anyhow::Result<(AudioDeviceIOProcID, *mut c_void)> {
+    let context = Box::new(IoContext { volume, muted });
     let context_ptr = Box::into_raw(context) as *mut c_void;
 
     extern "C" fn io_proc(
@@ -643,12 +660,11 @@ fn install_volume_io_proc(
     };
 
     if status != 0 {
-        // Clean up the leaked context
         unsafe { drop(Box::from_raw(context_ptr as *mut IoContext)) };
         anyhow::bail!("AudioDeviceCreateIOProcID failed (OSStatus: {status})");
     }
 
-    Ok(io_proc_id)
+    Ok((io_proc_id, context_ptr))
 }
 
 /// Resolve a bundle ID to the app's localised display name via NSRunningApplication.
@@ -704,44 +720,7 @@ fn localized_app_name(bundle_id: &str) -> Option<String> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// CoreFoundation string helpers
-// ---------------------------------------------------------------------------
-
-unsafe fn cfstring_from_str(s: &str) -> CFStringRef {
-    CFStringCreateWithBytes(
-        ptr::null(),
-        s.as_ptr(),
-        s.len() as _,
-        kCFStringEncodingUTF8,
-        false as _,
-    )
-}
-
-unsafe fn cfstring_to_string(cf_ref: CFStringRef) -> String {
-    let c_ptr = CFStringGetCStringPtr(cf_ref, kCFStringEncodingUTF8);
-    if !c_ptr.is_null() {
-        return std::ffi::CStr::from_ptr(c_ptr)
-            .to_string_lossy()
-            .into_owned();
-    }
-
-    let len = CFStringGetLength(cf_ref);
-    let max_size = CFStringGetMaximumSizeForEncoding(len, kCFStringEncodingUTF8) + 1;
-    let mut buf = vec![0u8; max_size as usize];
-    let success = CFStringGetCString(
-        cf_ref,
-        buf.as_mut_ptr() as *mut _,
-        max_size,
-        kCFStringEncodingUTF8,
-    );
-    if success != 0 {
-        let cstr = std::ffi::CStr::from_ptr(buf.as_ptr() as *const _);
-        cstr.to_string_lossy().into_owned()
-    } else {
-        String::from("(unknown)")
-    }
-}
+use crate::macos_utils::{cfstring_from_str, cfstring_to_string};
 
 // ---------------------------------------------------------------------------
 // macOS version check

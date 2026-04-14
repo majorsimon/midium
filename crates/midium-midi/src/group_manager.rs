@@ -96,7 +96,7 @@ impl GroupManager {
             // Fader movement → set volume
             if let Some(fader) = &group.fader {
                 if control_matches(event, fader) {
-                    let raw = extract_raw(&event.message);
+                    let raw = event.message.raw_value();
                     if let Some(value) = group.transform.apply(raw, group.fader_state) {
                         group.fader_state = value;
                         trace!(target = ?group.target, volume = value, "Group fader → set_volume");
@@ -322,12 +322,3 @@ fn is_press(msg: &MidiMessage) -> bool {
     }
 }
 
-/// Extract the raw 0-127 value from a MIDI message (same as in MappingEngine).
-fn extract_raw(msg: &MidiMessage) -> u8 {
-    match msg {
-        MidiMessage::ControlChange { value, .. } => *value,
-        MidiMessage::NoteOn { velocity, .. } => *velocity,
-        MidiMessage::NoteOff { .. } => 0,
-        MidiMessage::PitchBend { value } => (*value >> 7) as u8,
-    }
-}

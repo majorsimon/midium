@@ -1,3 +1,4 @@
+use midium_core::event_bus::EventBus;
 use midium_core::types::{AudioCapabilities, AudioDeviceInfo, AudioSessionInfo, AudioTarget};
 use midium_core::dispatch::VolumeControl;
 
@@ -24,4 +25,9 @@ pub trait AudioBackend: VolumeControl + Send + Sync {
 
     /// Query what this backend supports.
     fn capabilities(&self) -> AudioCapabilities;
+
+    /// Register an EventBus to receive push notifications for volume/mute
+    /// changes detected by the backend. Backends that don't support change
+    /// listeners may leave the default no-op implementation.
+    fn register_event_bus(&self, _event_bus: EventBus) {}
 }

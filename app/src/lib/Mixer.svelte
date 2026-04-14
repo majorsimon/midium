@@ -13,9 +13,17 @@
     DeviceProfile,
     FaderGroup,
   } from "./types";
+  import {
+    masterVolume as masterVolumeStore,
+    masterMuted as masterMutedStore,
+    focusedVolume as focusedVolumeStore,
+    focusedMuted as focusedMutedStore,
+    sessions as sessionsStore,
+    initStoreListeners,
+  } from "./stores";
 
   // ---------------------------------------------------------------------------
-  // Audio state
+  // Audio state (local reactive copies, kept in sync with stores)
   // ---------------------------------------------------------------------------
 
   let masterVolume = 0.7;
@@ -344,7 +352,12 @@
         invoke<number>("get_volume", { target: "SystemMaster" }),
         invoke<boolean>("get_muted", { target: "SystemMaster" }).catch(() => false),
       ]);
-      if (caps.per_app_volume) sessions = await invoke("list_sessions");
+      masterVolumeStore.set(masterVolume);
+      masterMutedStore.set(masterMuted);
+      if (caps.per_app_volume) {
+        sessions = await invoke("list_sessions");
+        sessionsStore.set(sessions);
+      }
     } catch (e) {
       console.error("Mixer: failed to load state", e);
     }
@@ -389,10 +402,24 @@
   });
 
   onMount(async () => {
+    await initStoreListeners();
+
+    // Subscribe to stores to keep local reactive variables in sync
+    const unsubs = [
+      masterVolumeStore.subscribe(v => masterVolume = v),
+      masterMutedStore.subscribe(v => masterMuted = v),
+      focusedVolumeStore.subscribe(v => focusedVolume = v),
+      focusedMutedStore.subscribe(v => focusedMuted = v),
+      sessionsStore.subscribe(v => sessions = v),
+    ];
+    unlistens.push(...unsubs.map(u => u as unknown as UnlistenFn));
+
     await loadState();
     await loadMappings();
     await syncAllLeds();
 
+    // Fallback polling at 30s to catch any missed push events (e.g. per-app
+    // session changes, mapping edits from another tab).
     refreshTimer = setInterval(async () => {
       [masterVolume, masterMuted, focusedVolume, focusedMuted] = await Promise.all([
         invoke<number>("get_volume", { target: "SystemMaster" }).catch(() => masterVolume),
@@ -400,20 +427,21 @@
         invoke<number>("get_volume", { target: "FocusedApplication" }).catch(() => focusedVolume),
         invoke<boolean>("get_muted", { target: "FocusedApplication" }).catch(() => focusedMuted),
       ]);
+      masterVolumeStore.set(masterVolume);
+      masterMutedStore.set(masterMuted);
+      focusedVolumeStore.set(focusedVolume);
+      focusedMutedStore.set(focusedMuted);
       if (caps.per_app_volume) {
         const prev = sessions;
         sessions = await invoke<AudioSessionInfo[]>("list_sessions").catch(() => sessions);
+        sessionsStore.set(sessions);
         if (sessions !== prev) await syncAllLeds();
       }
-      // Refresh mappings so new entries added in the Mappings tab appear immediately
       await loadMappings();
       await refreshGroupState();
-    }, 3000);
+    }, 30_000);
 
     unlistens.push(
-      await listen<{ target: unknown; volume: number }>("volume-changed", (e) => {
-        if (e.payload.target === "SystemMaster") masterVolume = e.payload.volume;
-      }),
       await listen<string>("device-connected", async () => {
         await loadState();
         await refreshGroupState();
