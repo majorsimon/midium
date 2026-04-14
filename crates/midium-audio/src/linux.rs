@@ -98,7 +98,7 @@ impl PulseConn {
             if let pa::callbacks::ListResult::Item(info) = item {
                 if let Ok(mut guard) = result_c.lock() {
                     if let Some(v) = guard.as_mut() {
-                        v.push(info.clone().to_owned());
+                        v.push(info.to_owned());
                     }
                 }
             }
@@ -129,7 +129,7 @@ impl PulseConn {
             if let pa::callbacks::ListResult::Item(info) = item {
                 if let Ok(mut guard) = result_c.lock() {
                     if let Some(v) = guard.as_mut() {
-                        v.push(info.clone().to_owned());
+                        v.push(info.to_owned());
                     }
                 }
             }
@@ -160,7 +160,7 @@ impl PulseConn {
             if let pa::callbacks::ListResult::Item(info) = item {
                 if let Ok(mut guard) = result_c.lock() {
                     if let Some(v) = guard.as_mut() {
-                        v.push(info.clone().to_owned());
+                        v.push(info.to_owned());
                     }
                 }
             }
@@ -232,7 +232,7 @@ impl PulseConn {
         let introspect = self.context.introspect();
 
         let op = introspect.get_server_info(move |info: &pa::context::introspect::ServerInfo<'_>| {
-            *result_c.lock().unwrap() = Some(info.clone().to_owned());
+            *result_c.lock().unwrap() = Some(info.to_owned());
         });
 
         loop {
