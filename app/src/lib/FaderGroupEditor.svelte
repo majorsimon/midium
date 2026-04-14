@@ -67,13 +67,34 @@
     formGroup = profileGroups[0];
   }
 
-  // Label for a profile group's slider control.
+  // Auto-update default transform when user switches groups (encoder vs slider).
+  $: if (showForm && editingIndex === null && selectedProfile) {
+    formTransform = defaultTransformForGroup(formGroup);
+  }
+
+  // Label for a profile group's slider/encoder control.
   function profileGroupLabel(g: number): string {
     if (!selectedProfile) return `Group ${g}`;
-    const slider = selectedProfile.controls.find(c =>
+    const fader = selectedProfile.controls.find(c =>
       c.group === g && (c.control_type === "slider" || c.control_type === "encoder")
     );
-    return slider?.label ?? `Group ${g}`;
+    return fader?.label ?? `Group ${g}`;
+  }
+
+  /** True if the selected profile group uses an encoder rather than a slider. */
+  function groupUsesEncoder(g: number): boolean {
+    if (!selectedProfile) return false;
+    const fader = selectedProfile.controls.find(c =>
+      c.group === g && (c.control_type === "slider" || c.control_type === "encoder")
+    );
+    return fader?.control_type === "encoder";
+  }
+
+  /** Return the appropriate default transform for a group. */
+  function defaultTransformForGroup(g: number): FaderGroup["transform"] {
+    return groupUsesEncoder(g)
+      ? { RelativeEncoder: { sensitivity: 0.01 } }
+      : "Logarithmic";
   }
 
   // ---------------------------------------------------------------------------
@@ -114,9 +135,9 @@
   function openAddForm() {
     editingIndex = null;
     formDevice = midiPorts[0] ?? "";
-    formGroup = 1;
+    formGroup = profileGroups[0] ?? 1;
     formTargetEncoded = "SystemMaster";
-    formTransform = "Logarithmic";
+    formTransform = defaultTransformForGroup(formGroup);
     showForm = true;
     loadAudioTargets();
   }
@@ -342,11 +363,38 @@
 
           <div class="field">
             <label>Fader Curve</label>
-            <select bind:value={formTransform}>
-              <option value="Logarithmic">Logarithmic (recommended)</option>
+            <select value={typeof formTransform === "string" ? formTransform : "RelativeEncoder"}
+              on:change={(e) => {
+                const v = e.currentTarget.value;
+                if (v === "RelativeEncoder") {
+                  formTransform = { RelativeEncoder: { sensitivity: 0.01 } };
+                } else if (v === "Logarithmic") {
+                  formTransform = "Logarithmic";
+                } else {
+                  formTransform = "Linear";
+                }
+              }}
+            >
+              <option value="Logarithmic">Logarithmic (recommended for sliders)</option>
               <option value="Linear">Linear</option>
+              <option value="RelativeEncoder">Relative Encoder</option>
             </select>
           </div>
+          {#if typeof formTransform === "object" && "RelativeEncoder" in formTransform}
+            <div class="field">
+              <label>Encoder Sensitivity</label>
+              <input
+                type="number"
+                min="0.001"
+                max="0.1"
+                step="0.005"
+                value={formTransform.RelativeEncoder.sensitivity}
+                on:input={(e) => {
+                  formTransform = { RelativeEncoder: { sensitivity: parseFloat(e.currentTarget.value) || 0.01 } };
+                }}
+              />
+            </div>
+          {/if}
         </div>
 
         <div class="form-arrow">→</div>
@@ -460,7 +508,11 @@
 
           <div class="col-curve">
             <span class="tag dim-tag">
-              {typeof g.transform === "string" ? g.transform : JSON.stringify(g.transform)}
+              {typeof g.transform === "string"
+                ? g.transform
+                : "RelativeEncoder" in g.transform
+                  ? `Encoder ×${g.transform.RelativeEncoder.sensitivity}`
+                  : JSON.stringify(g.transform)}
             </span>
           </div>
 

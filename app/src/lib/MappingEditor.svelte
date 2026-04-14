@@ -8,12 +8,15 @@
     controlLabel, actionLabel,
   } from "./types";
 
+  import type { ProfileControlType } from "./types";
+
   /** When set by the Devices tab, opens the Add form pre-filled with this control. */
   export let prefill: {
     device: string;
     channel: number;
     controlTypeName: "CC" | "Note" | "PitchBend";
     controlNumber: number;
+    profileControlType?: ProfileControlType;
   } | null = null;
 
   let mappings: Mapping[] = [];
@@ -33,6 +36,7 @@
     actionTypeName: "SetVolume" as string,
     actionTargets: ["SystemMaster"] as string[],
     transformName: "Linear" as string,
+    encoderSensitivity: 0.01,
   };
 
   // Apply prefill whenever the prop changes (set from Devices tab).
@@ -41,6 +45,11 @@
     form.channel = prefill.channel;
     form.controlTypeName = prefill.controlTypeName;
     form.controlNumber = prefill.controlNumber;
+    // Auto-select RelativeEncoder transform for encoder controls
+    if (prefill.profileControlType === "encoder") {
+      form.transformName = "RelativeEncoder";
+      form.encoderSensitivity = 0.01;
+    }
     showAddForm = true;
     loadAudioTargets();
     prefill = null; // consume it
@@ -166,11 +175,18 @@
     form.actionTargets = form.actionTargets.filter((_, j) => j !== i);
   }
 
+  function buildTransform(): Mapping["transform"] {
+    if (form.transformName === "RelativeEncoder") {
+      return { RelativeEncoder: { sensitivity: form.encoderSensitivity } };
+    }
+    return form.transformName as "Linear" | "Logarithmic" | "Toggle" | "Momentary";
+  }
+
   async function saveMapping() {
     const mapping: Mapping = {
       control: buildControlId(),
       action: buildAction() as Mapping["action"],
-      transform: form.transformName as Mapping["transform"],
+      transform: buildTransform(),
     };
     await invoke("save_mapping", { mapping }).catch(console.error);
     showAddForm = false;
@@ -390,10 +406,23 @@
             <select bind:value={form.transformName}>
               <option>Linear</option>
               <option>Logarithmic</option>
+              <option value="RelativeEncoder">Relative Encoder</option>
               <option>Toggle</option>
               <option>Momentary</option>
             </select>
           </div>
+          {#if form.transformName === "RelativeEncoder"}
+            <div class="field">
+              <label>Sensitivity</label>
+              <input
+                type="number"
+                min="0.001"
+                max="0.1"
+                step="0.005"
+                bind:value={form.encoderSensitivity}
+              />
+            </div>
+          {/if}
         </div>
       </div>
 

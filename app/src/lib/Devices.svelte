@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import type { DeviceProfile, ProfileControl } from "./types";
+  import type { DeviceProfile, ProfileControl, ProfileControlType } from "./types";
 
   /** List of connected MIDI port names — passed in from +page.svelte. */
   export let connectedDevices: string[] = [];
@@ -14,6 +14,7 @@
       channel: number;
       controlTypeName: "CC" | "Note" | "PitchBend";
       controlNumber: number;
+      profileControlType?: ProfileControlType;
     };
   }>();
 
@@ -85,6 +86,7 @@
       channel: c.channel,
       controlTypeName: midiType === "note" ? "Note" : midiType === "pitch_bend" ? "PitchBend" : "CC",
       controlNumber: c.number,
+      profileControlType: c.control_type,
     });
   }
 </script>
