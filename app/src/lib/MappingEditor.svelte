@@ -37,6 +37,11 @@
     actionTargets: ["SystemMaster"] as string[],
     transformName: "Linear" as string,
     encoderSensitivity: 0.01,
+    midiOutDevice: "",
+    midiOutChannel: 0,
+    midiOutType: "cc" as "cc" | "note",
+    midiOutNumber: 0,
+    midiOutValue: 127,
   };
 
   // Apply prefill whenever the prop changes (set from Devices tab).
@@ -159,6 +164,16 @@
       case "MediaPlayPause": return "MediaPlayPause";
       case "MediaNext":      return "MediaNext";
       case "MediaPrev":      return "MediaPrev";
+      case "SendMidiMessage":
+        return {
+          SendMidiMessage: {
+            device: form.midiOutDevice,
+            channel: form.midiOutChannel,
+            message_type: form.midiOutType,
+            number: form.midiOutNumber,
+            value: form.midiOutValue,
+          },
+        };
       default: return { SetVolume: { target: "SystemMaster" as const } };
     }
   }
@@ -315,6 +330,9 @@
                 <option value="MediaNext">Next Track</option>
                 <option value="MediaPrev">Previous Track</option>
               </optgroup>
+              <optgroup label="MIDI">
+                <option value="SendMidiMessage">Send MIDI Message</option>
+              </optgroup>
             </select>
           </div>
           {#if form.actionTypeName === "SetDefaultOutput" || form.actionTypeName === "SetDefaultInput"}
@@ -336,6 +354,43 @@
                   {/each}
                 {/if}
               </select>
+            </div>
+          {/if}
+
+          {#if form.actionTypeName === "SendMidiMessage"}
+            <div class="field">
+              <label>Output port</label>
+              {#if midiPorts.length > 0}
+                <select bind:value={form.midiOutDevice}>
+                  <option value="" disabled>Select MIDI port…</option>
+                  {#each midiPorts as port}
+                    <option value={port}>{port}</option>
+                  {/each}
+                </select>
+              {:else}
+                <input bind:value={form.midiOutDevice} placeholder="MIDI output port name" />
+              {/if}
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label>Ch</label>
+                <input type="number" min="0" max="15" bind:value={form.midiOutChannel} />
+              </div>
+              <div class="field">
+                <label>Type</label>
+                <select bind:value={form.midiOutType}>
+                  <option value="cc">CC</option>
+                  <option value="note">Note On</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>#</label>
+                <input type="number" min="0" max="127" bind:value={form.midiOutNumber} />
+              </div>
+              <div class="field">
+                <label>Value</label>
+                <input type="number" min="0" max="127" bind:value={form.midiOutValue} />
+              </div>
             </div>
           {/if}
 

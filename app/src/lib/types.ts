@@ -52,6 +52,15 @@ export type Action =
   | "MediaPlayPause"
   | "MediaNext"
   | "MediaPrev"
+  | {
+      SendMidiMessage: {
+        device: string;
+        channel: number;
+        message_type: string;
+        number: number;
+        value: number;
+      };
+    }
   | { ActionGroup: { actions: Action[] } };
 
 export interface Mapping {
@@ -119,6 +128,10 @@ export function actionLabel(a: Action): string {
   if ("ToggleMute" in a) return `Mute → ${targetLabel(a.ToggleMute.target)}`;
   if ("SetDefaultOutput" in a) return `Out → ${a.SetDefaultOutput.device_id}`;
   if ("SetDefaultInput" in a) return `In → ${a.SetDefaultInput.device_id}`;
+  if ("SendMidiMessage" in a) {
+    const m = a.SendMidiMessage;
+    return `MIDI out → ${m.device} ch${m.channel} ${m.message_type} ${m.number}=${m.value}`;
+  }
   if ("ActionGroup" in a) {
     // Flatten SetVolume / ToggleMute targets to a readable list
     const labels = a.ActionGroup.actions.map(sub => {
