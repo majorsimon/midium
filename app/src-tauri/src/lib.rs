@@ -67,6 +67,28 @@ impl DeviceLister for SharedAudio {
     }
 }
 
+fn register_toggle_shortcut(app: tauri::AppHandle, shortcut_str: &str) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+
+    let shortcut: Shortcut = shortcut_str
+        .parse::<Shortcut>()
+        .map_err(|e| e.to_string())?;
+    app.global_shortcut()
+        .on_shortcut(shortcut, |app_handle, _scut, event| {
+            if event.state == ShortcutState::Pressed {
+                if let Some(win) = app_handle.get_webview_window("main") {
+                    if win.is_visible().unwrap_or(false) {
+                        let _ = win.hide();
+                    } else {
+                        let _ = win.show();
+                        let _ = win.set_focus();
+                    }
+                }
+            }
+        })
+        .map_err(|e| e.to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Managed state
 // ---------------------------------------------------------------------------
@@ -77,6 +99,8 @@ pub struct AppState {
     pub dispatcher: Arc<ActionDispatcher>,
     pub mappings_config: Arc<Mutex<MappingsConfig>>,
     pub app_config: Arc<Mutex<AppConfig>>,
+    /// Currently registered global show/hide shortcut string (mirrors config when registration succeeds).
+    pub current_shortcut: Arc<Mutex<Option<String>>>,
     /// When Some, the next MIDI event is forwarded for MIDI Learn.
     pub midi_learn_tx: Arc<Mutex<Option<oneshot::Sender<MidiEvent>>>>,
     /// Snapshot of loaded plugin info (populated at startup).
@@ -363,6 +387,52 @@ fn save_config(state: State<AppState>, config: AppConfig) -> Result<(), String> 
     Ok(())
 }
 
+#[tauri::command]
+fn get_shortcut(state: State<AppState>) -> Option<String> {
+    state.current_shortcut.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn set_shortcut(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    shortcut: Option<String>,
+) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+
+    let old_shortcut = {
+        let mut guard = state.current_shortcut.lock().unwrap();
+        let old = guard.clone();
+        *guard = shortcut.clone();
+        old
+    };
+
+    if let Some(ref old_str) = old_shortcut {
+        if let Ok(old_parsed) = old_str.parse::<Shortcut>() {
+            let _ = app.global_shortcut().unregister(old_parsed);
+        }
+    }
+
+    if let Some(ref new_str) = shortcut {
+        if let Err(e) = register_toggle_shortcut(app.clone(), new_str) {
+            if let Some(ref restore) = old_shortcut {
+                let _ = register_toggle_shortcut(app.clone(), restore);
+            }
+            *state.current_shortcut.lock().unwrap() = old_shortcut;
+            return Err(e);
+        }
+    }
+
+    let mut config = state.app_config.lock().unwrap();
+    config.general.shortcut = shortcut;
+    let content = toml::to_string(&*config).map_err(|e| e.to_string())?;
+    drop(config);
+    std::fs::create_dir_all(config_dir()).map_err(|e| e.to_string())?;
+    std::fs::write(config_dir().join("config.toml"), content).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // App entry point
 // ---------------------------------------------------------------------------
@@ -370,6 +440,7 @@ fn save_config(state: State<AppState>, config: AppConfig) -> Result<(), String> 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             tracing_subscriber::fmt()
                 .with_env_filter(
@@ -460,10 +531,17 @@ pub fn run() {
                 dispatcher: dispatcher.clone(),
                 mappings_config: Arc::new(Mutex::new(mappings_config)),
                 app_config: Arc::new(Mutex::new(app_config.clone())),
+                current_shortcut: Arc::new(Mutex::new(app_config.general.shortcut.clone())),
                 midi_learn_tx: midi_learn_tx.clone(),
                 plugin_list: Arc::new(Mutex::new(plugin_list)),
                 profiles: profiles_arc.clone(),
             });
+
+            if let Some(ref shortcut_str) = app_config.general.shortcut {
+                if let Err(e) = register_toggle_shortcut(app.handle().clone(), shortcut_str) {
+                    tracing::warn!("Failed to register global shortcut: {e}");
+                }
+            }
 
             setup_tray(app)?;
 
@@ -560,6 +638,8 @@ pub fn run() {
             cancel_midi_learn,
             get_config,
             save_config,
+            get_shortcut,
+            set_shortcut,
             list_plugins,
             list_profiles,
             send_midi,

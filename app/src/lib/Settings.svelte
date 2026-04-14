@@ -9,6 +9,8 @@
   let caps: AudioCapabilities | null = null;
   let profiles: DeviceProfile[] = [];
   let saved = false;
+  let shortcutKey = "";
+  let shortcutEnabled = false;
 
   // Export/import state
   let exportContent = "";
@@ -24,7 +26,22 @@
       invoke<AudioCapabilities>("get_capabilities").catch(() => null),
       invoke<DeviceProfile[]>("list_profiles").catch(() => [] as DeviceProfile[]),
     ]);
+    const currentShortcut = await invoke<string | null>("get_shortcut").catch(() => null);
+    shortcutKey = currentShortcut ?? "CmdOrCtrl+Shift+M";
+    shortcutEnabled = currentShortcut !== null;
   });
+
+  async function updateShortcut() {
+    try {
+      const value = shortcutEnabled ? shortcutKey : null;
+      await invoke("set_shortcut", { shortcut: value });
+      if (config) {
+        config.general.shortcut = value;
+      }
+    } catch (e) {
+      console.error("Failed to set shortcut:", e);
+    }
+  }
 
   async function save() {
     await invoke("save_config", { config }).catch(console.error);
@@ -95,6 +112,22 @@
           <option>trace</option>
         </select>
       </div>
+      <div class="field-row">
+        <label>Global show/hide shortcut</label>
+        <input type="checkbox" bind:checked={shortcutEnabled} on:change={updateShortcut} />
+      </div>
+      {#if shortcutEnabled}
+        <div class="field-row">
+          <label>Shortcut key</label>
+          <input
+            type="text"
+            bind:value={shortcutKey}
+            on:change={updateShortcut}
+            placeholder="CmdOrCtrl+Shift+M"
+            style="width: 200px; font-family: monospace; font-size: 11px;"
+          />
+        </div>
+      {/if}
     </div>
 
     <!-- MIDI -->
