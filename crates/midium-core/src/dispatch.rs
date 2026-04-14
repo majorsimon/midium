@@ -1,5 +1,7 @@
 use tracing::{debug, info, warn};
-use crate::types::{Action, AudioTarget};
+
+use crate::event_bus::EventBus;
+use crate::types::{Action, AppEvent, AudioTarget};
 
 /// Trait implemented by the audio backend so the dispatcher can call into it.
 pub trait VolumeControl: Send + Sync {
@@ -35,22 +37,38 @@ pub struct ActionDispatcher {
     audio: Box<dyn VolumeControl>,
     shortcuts: Option<Box<dyn ShortcutExecutor>>,
     devices: Option<Box<dyn DeviceLister>>,
+    event_bus: Option<EventBus>,
 }
 
 impl ActionDispatcher {
     pub fn new(audio: Box<dyn VolumeControl>) -> Self {
-        Self { audio, shortcuts: None, devices: None }
+        Self {
+            audio,
+            shortcuts: None,
+            devices: None,
+            event_bus: None,
+        }
     }
 
     pub fn with_shortcuts(
         audio: Box<dyn VolumeControl>,
         shortcuts: Box<dyn ShortcutExecutor>,
     ) -> Self {
-        Self { audio, shortcuts: Some(shortcuts), devices: None }
+        Self {
+            audio,
+            shortcuts: Some(shortcuts),
+            devices: None,
+            event_bus: None,
+        }
     }
 
     pub fn with_device_lister(mut self, lister: Box<dyn DeviceLister>) -> Self {
         self.devices = Some(lister);
+        self
+    }
+
+    pub fn with_event_bus(mut self, bus: EventBus) -> Self {
+        self.event_bus = Some(bus);
         self
     }
 
@@ -136,6 +154,34 @@ impl ActionDispatcher {
                     sc.execute(action);
                 } else {
                     warn!(?action, "No shortcut executor registered");
+                }
+            }
+            Action::SendMidiMessage {
+                device,
+                channel,
+                message_type,
+                number,
+                value,
+            } => {
+                let ch = *channel & 0x0F;
+                let num = *number & 0x7F;
+                let vel = *value & 0x7F;
+                let status = match message_type.as_str() {
+                    "cc" => 0xB0 | ch,
+                    "note" => 0x90 | ch,
+                    other => {
+                        warn!(message_type = %other, "SendMidiMessage: expected message_type \"cc\" or \"note\"");
+                        return;
+                    }
+                };
+                let data = vec![status, num, vel];
+                if let Some(bus) = &self.event_bus {
+                    bus.publish(AppEvent::SendMidi {
+                        device: device.clone(),
+                        data,
+                    });
+                } else {
+                    warn!("SendMidiMessage: no event bus registered");
                 }
             }
         }

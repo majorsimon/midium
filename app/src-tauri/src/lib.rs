@@ -488,7 +488,8 @@ pub fn run() {
                     Box::new(SharedAudio(audio.clone())),
                     Box::new(ShortcutHandler::new()),
                 )
-                .with_device_lister(Box::new(SharedAudio(audio.clone()))),
+                .with_device_lister(Box::new(SharedAudio(audio.clone())))
+                .with_event_bus(event_bus.clone()),
             );
 
             let mapping_engine = Arc::new(Mutex::new(MappingEngine::new(event_bus.clone())));

@@ -80,6 +80,14 @@ pub enum Action {
     MediaPrev,
     RunPluginAction { plugin: String, action: String },
     SendKeyboardShortcut { keys: Vec<String> },
+    /// Send a CC or Note On message to a MIDI output port (`message_type`: `"cc"` or `"note"`).
+    SendMidiMessage {
+        device: String,
+        channel: u8,
+        message_type: String,
+        number: u8,
+        value: u8,
+    },
     ActionGroup { actions: Vec<Action> },
 }
 

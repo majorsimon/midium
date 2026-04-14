@@ -248,7 +248,8 @@ async fn async_main(
     let audio_arc: Arc<dyn AudioBackend> = Arc::from(audio_backend);
     let dispatcher = Arc::new(
         ActionDispatcher::new(Box::new(ArcAudio(audio_arc.clone())))
-            .with_device_lister(Box::new(ArcAudio(audio_arc.clone()))),
+            .with_device_lister(Box::new(ArcAudio(audio_arc.clone())))
+            .with_event_bus(event_bus.clone()),
     );
 
     let profiles_arc = Arc::new(profiles);
