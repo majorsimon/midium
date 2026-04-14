@@ -548,8 +548,9 @@ pub fn run() {
 
 fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let show = MenuItem::with_id(app, "show", "Show Midium", true, None::<&str>)?;
+    let mute = MenuItem::with_id(app, "mute", "Toggle Mute", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Midium", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &mute, &quit])?;
 
     TrayIconBuilder::new()
         .icon(app.default_window_icon().unwrap().clone())
@@ -560,6 +561,13 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(win) = app.get_webview_window("main") {
                     let _ = win.show();
                     let _ = win.set_focus();
+                }
+            }
+            "mute" => {
+                let state = app.state::<AppState>();
+                let target = midium_core::types::AudioTarget::SystemMaster;
+                if let Ok(muted) = state.audio.is_muted(&target) {
+                    let _ = state.audio.set_mute(&target, !muted);
                 }
             }
             "quit" => app.exit(0),
