@@ -14,9 +14,9 @@ use midium_core::{
     dispatch::{ActionDispatcher, VolumeControl},
     event_bus::EventBus,
     mapping::MappingEngine,
-    types::{AppEvent, AudioTarget, MidiEvent},
+    types::{AppEvent, AudioTarget, FaderGroup, MidiEvent},
 };
-use midium_midi::{manager::MidiManager, profile::load_profiles, DeviceProfile};
+use midium_midi::{manager::MidiManager, profile::load_profiles, DeviceProfile, GroupManager};
 use midium_plugins::{PluginInfo, PluginManager};
 use midium_shortcuts::ShortcutHandler;
 
@@ -42,6 +42,9 @@ impl VolumeControl for SharedAudio {
     }
     fn set_default_input(&self, id: &str) -> anyhow::Result<()> {
         self.0.set_default_input(id)
+    }
+    fn is_default_output(&self, id: &str) -> anyhow::Result<bool> {
+        self.0.is_default_output(id)
     }
 }
 
@@ -260,6 +263,44 @@ fn persist_mappings(config: &MappingsConfig) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+// ---------------------------------------------------------------------------
+// Fader group IPC commands
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn get_fader_groups(state: State<AppState>) -> Vec<FaderGroup> {
+    state.mappings_config.lock().unwrap().fader_groups.clone()
+}
+
+#[tauri::command]
+fn save_fader_group(state: State<AppState>, group: FaderGroup) -> Result<(), String> {
+    let mut config = state.mappings_config.lock().unwrap();
+    let existing = config
+        .fader_groups
+        .iter()
+        .position(|g| g.device == group.device && g.group == group.group);
+    match existing {
+        Some(idx) => config.fader_groups[idx] = group,
+        None => config.fader_groups.push(group),
+    }
+    state
+        .event_bus
+        .publish(AppEvent::GroupsChanged { groups: config.fader_groups.clone() });
+    persist_mappings(&config)
+}
+
+#[tauri::command]
+fn delete_fader_group(state: State<AppState>, device: String, group: u8) -> Result<(), String> {
+    let mut config = state.mappings_config.lock().unwrap();
+    config
+        .fader_groups
+        .retain(|g| !(g.device == device && g.group == group));
+    state
+        .event_bus
+        .publish(AppEvent::GroupsChanged { groups: config.fader_groups.clone() });
+    persist_mappings(&config)
+}
+
 #[tauri::command]
 fn start_midi_learn(state: State<AppState>, app_handle: AppHandle) -> Result<(), String> {
     let (tx, rx) = oneshot::channel::<MidiEvent>();
@@ -380,6 +421,8 @@ pub fn run() {
 
             let profiles_arc = Arc::new(profiles);
 
+            let initial_fader_groups = mappings_config.fader_groups.clone();
+
             app.manage(AppState {
                 event_bus: event_bus.clone(),
                 audio: audio.clone(),
@@ -410,6 +453,20 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 MidiManager::new(bus_midi, poll, profiles_for_midi).run().await;
             });
+
+            // Spawn GroupManager for fader-group LED feedback and smart mute buttons
+            {
+                let group_audio = Box::new(SharedAudio(audio.clone()));
+                let group_manager = GroupManager::new(
+                    initial_fader_groups,
+                    profiles_arc.clone(),
+                    group_audio,
+                    event_bus.clone(),
+                );
+                tauri::async_runtime::spawn(async move {
+                    group_manager.run().await;
+                });
+            }
 
             // EventBus → Tauri event bridge
             let bus = event_bus.clone();
@@ -477,6 +534,9 @@ pub fn run() {
             import_mappings,
             export_profile,
             import_profile,
+            get_fader_groups,
+            save_fader_group,
+            delete_fader_group,
         ])
         .run(tauri::generate_context!())
         .expect("error running midium");

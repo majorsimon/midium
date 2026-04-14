@@ -154,6 +154,35 @@ impl ValueTransform {
 }
 
 // ---------------------------------------------------------------------------
+// Fader Group — links a profile channel strip to an audio target
+// ---------------------------------------------------------------------------
+
+/// A fader-group binding: ties a profile channel-strip group to an audio target.
+///
+/// When active:
+/// - The strip's fader (slider/encoder) sets volume on the target.
+/// - The M button toggles mute on the target.
+/// - S LED = always lit (group has an assignment).
+/// - M LED = lit when muted.
+/// - R LED = lit when not muted (target is active).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FaderGroup {
+    /// Device name pattern for fuzzy matching (case-insensitive substring).
+    pub device: String,
+    /// Profile `group` number that this binding applies to.
+    pub group: u8,
+    /// Audio target controlled by this channel strip.
+    pub target: AudioTarget,
+    /// How to transform the fader's MIDI value. Defaults to `Logarithmic`.
+    #[serde(default = "default_fader_transform")]
+    pub transform: ValueTransform,
+}
+
+fn default_fader_transform() -> ValueTransform {
+    ValueTransform::Logarithmic
+}
+
+// ---------------------------------------------------------------------------
 // Mapping entry (persisted in TOML)
 // ---------------------------------------------------------------------------
 
@@ -198,6 +227,10 @@ pub enum AppEvent {
     SendMidi {
         device: String,
         data: Vec<u8>,
+    },
+    /// Notify the GroupManager that fader group config has changed.
+    GroupsChanged {
+        groups: Vec<FaderGroup>,
     },
     Shutdown,
 }

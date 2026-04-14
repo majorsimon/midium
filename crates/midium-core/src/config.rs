@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use crate::types::Mapping;
+use crate::types::{FaderGroup, Mapping};
 
 /// Top-level application configuration (config.toml).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +55,8 @@ pub struct PluginsConfig {
 pub struct MappingsConfig {
     #[serde(default)]
     pub mappings: Vec<Mapping>,
+    #[serde(default)]
+    pub fader_groups: Vec<FaderGroup>,
 }
 
 // Defaults
@@ -112,7 +114,7 @@ impl Default for PluginsConfig {
 
 impl Default for MappingsConfig {
     fn default() -> Self {
-        Self { mappings: Vec::new() }
+        Self { mappings: Vec::new(), fader_groups: Vec::new() }
     }
 }
 
@@ -176,7 +178,7 @@ mod tests {
             },
             transform: ValueTransform::Logarithmic,
         };
-        let config = MappingsConfig { mappings: vec![mapping] };
+        let config = MappingsConfig { mappings: vec![mapping], ..MappingsConfig::default() };
         let toml_str = toml::to_string(&config).expect("serialize");
         println!("--- Serialized TOML ---\n{toml_str}---");
         let back: MappingsConfig = toml::from_str(&toml_str).expect("deserialize");
@@ -196,7 +198,7 @@ mod tests {
             },
             transform: ValueTransform::Toggle,
         };
-        let config = MappingsConfig { mappings: vec![mapping] };
+        let config = MappingsConfig { mappings: vec![mapping], ..MappingsConfig::default() };
         let toml_str = toml::to_string(&config).expect("serialize");
         println!("--- Toggle Note TOML ---\n{toml_str}---");
         let _back: MappingsConfig = toml::from_str(&toml_str).expect("deserialize");
@@ -210,8 +212,6 @@ pub fn load_mappings() -> anyhow::Result<MappingsConfig> {
         let content = std::fs::read_to_string(&path)?;
         Ok(toml::from_str(&content)?)
     } else {
-        Ok(MappingsConfig {
-            mappings: Vec::new(),
-        })
+        Ok(MappingsConfig::default())
     }
 }

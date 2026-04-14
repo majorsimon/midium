@@ -451,6 +451,12 @@ impl VolumeControl for CoreAudioBackend {
             .map_err(|_| anyhow::anyhow!("Invalid device ID: {device_id}"))?;
         Self::set_default_input_device(id)
     }
+
+    fn is_default_output(&self, device_id: &str) -> anyhow::Result<bool> {
+        let requested: AudioObjectID = device_id.parse()
+            .map_err(|_| anyhow::anyhow!("Invalid device ID: {device_id}"))?;
+        Ok(Self::default_output_device()? == requested)
+    }
 }
 
 impl AudioBackend for CoreAudioBackend {

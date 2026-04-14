@@ -8,6 +8,11 @@ pub trait VolumeControl: Send + Sync {
     fn is_muted(&self, target: &AudioTarget) -> anyhow::Result<bool>;
     fn set_default_output(&self, device_id: &str) -> anyhow::Result<()>;
     fn set_default_input(&self, device_id: &str) -> anyhow::Result<()>;
+    /// Returns whether `device_id` is currently the system default output device.
+    /// Backends that don't support this query should leave the default impl (returns `false`).
+    fn is_default_output(&self, _device_id: &str) -> anyhow::Result<bool> {
+        Ok(false)
+    }
 }
 
 /// Trait implemented by the shortcuts backend (media keys, keyboard shortcuts).

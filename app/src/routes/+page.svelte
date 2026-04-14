@@ -7,9 +7,10 @@
   import Devices from "$lib/Devices.svelte";
   import Settings from "$lib/Settings.svelte";
   import PluginManager from "$lib/PluginManager.svelte";
+  import FaderGroupEditor from "$lib/FaderGroupEditor.svelte";
   import type { MidiEvent } from "$lib/types";
 
-  type Tab = "mixer" | "mappings" | "devices" | "plugins" | "settings";
+  type Tab = "mixer" | "groups" | "mappings" | "devices" | "plugins" | "settings";
   let activeTab: Tab = "mixer";
 
   // When Devices tab fires open-mapping, navigate to Mappings with pre-fill.
@@ -85,6 +86,9 @@
       <button class:active={activeTab === "mixer"} on:click={() => activeTab = "mixer"}>
         <span class="nav-icon">🎚</span> Mixer
       </button>
+      <button class:active={activeTab === "groups"} on:click={() => activeTab = "groups"}>
+        <span class="nav-icon">🎛</span> Groups
+      </button>
       <button class:active={activeTab === "devices"} on:click={() => activeTab = "devices"}>
         <span class="nav-icon">🎹</span> Devices
       </button>
@@ -129,6 +133,8 @@
   <main class="content">
     {#if activeTab === "mixer"}
       <Mixer />
+    {:else if activeTab === "groups"}
+      <FaderGroupEditor />
     {:else if activeTab === "devices"}
       <Devices
         {connectedDevices}

@@ -132,6 +132,21 @@ export function actionLabel(a: Action): string {
   return JSON.stringify(a);
 }
 
+// ---------------------------------------------------------------------------
+// Fader groups
+// ---------------------------------------------------------------------------
+
+export interface FaderGroup {
+  /** Device name pattern (fuzzy substring match). */
+  device: string;
+  /** Profile group number. */
+  group: number;
+  /** Audio target controlled by this channel strip. */
+  target: AudioTarget;
+  /** How the fader value is transformed. Default: "Logarithmic". */
+  transform: ValueTransform;
+}
+
 export function targetLabel(t: AudioTarget): string {
   if (t === "SystemMaster") return "Master";
   if (t === "FocusedApplication") return "Focused App";
