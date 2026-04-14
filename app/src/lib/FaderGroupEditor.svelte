@@ -366,9 +366,13 @@
             <select value={typeof formTransform === "string" ? formTransform : "RelativeEncoder"}
               on:change={(e) => {
                 const v = e.currentTarget.value;
-                formTransform = v === "RelativeEncoder"
-                  ? { RelativeEncoder: { sensitivity: 0.01 } }
-                  : v;
+                if (v === "RelativeEncoder") {
+                  formTransform = { RelativeEncoder: { sensitivity: 0.01 } };
+                } else if (v === "Logarithmic") {
+                  formTransform = "Logarithmic";
+                } else {
+                  formTransform = "Linear";
+                }
               }}
             >
               <option value="Logarithmic">Logarithmic (recommended for sliders)</option>
