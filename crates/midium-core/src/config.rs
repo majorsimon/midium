@@ -21,6 +21,8 @@ pub struct GeneralConfig {
     pub autostart: bool,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[serde(default = "default_shortcut")]
+    pub shortcut: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +60,7 @@ pub struct MappingsConfig {
 
 // Defaults
 fn default_true() -> bool { true }
+fn default_shortcut() -> Option<String> { Some("CmdOrCtrl+Shift+M".into()) }
 fn default_log_level() -> String { "info".into() }
 fn default_poll_interval() -> u64 { 2 }
 fn default_refresh_interval() -> u64 { 5 }
@@ -67,6 +70,7 @@ impl Default for GeneralConfig {
         Self {
             autostart: true,
             log_level: default_log_level(),
+            shortcut: default_shortcut(),
         }
     }
 }
