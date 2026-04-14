@@ -141,42 +141,85 @@ impl VolumeControl for WasapiBackend {
         }
     }
 
-    fn set_mute(&self, _target: &AudioTarget, muted: bool) -> anyhow::Result<()> {
+    fn set_mute(&self, target: &AudioTarget, muted: bool) -> anyhow::Result<()> {
         let enumerator = Self::enumerator()?;
-        let device = unsafe {
-            enumerator
-                .GetDefaultAudioEndpoint(eRender, eConsole)
-                .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
-        };
-        let ep_vol = Self::endpoint_volume(&device)?;
-        unsafe {
-            ep_vol
-                .SetMute(muted, std::ptr::null())
-                .map_err(|e| anyhow::anyhow!("SetMute: {e}"))?;
+        match target {
+            AudioTarget::SystemMaster | AudioTarget::Device { .. } => {
+                let device = match target {
+                    AudioTarget::SystemMaster => unsafe {
+                        enumerator
+                            .GetDefaultAudioEndpoint(eRender, eConsole)
+                            .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
+                    },
+                    AudioTarget::Device { id } => unsafe {
+                        let id_wide: Vec<u16> = id.encode_utf16().chain(Some(0)).collect();
+                        enumerator
+                            .GetDevice(windows::core::PCWSTR(id_wide.as_ptr()))
+                            .map_err(|e| anyhow::anyhow!("GetDevice: {e}"))?
+                    },
+                    _ => unreachable!(),
+                };
+                let ep_vol = Self::endpoint_volume(&device)?;
+                unsafe {
+                    ep_vol
+                        .SetMute(muted, std::ptr::null())
+                        .map_err(|e| anyhow::anyhow!("SetMute: {e}"))?;
+                }
+                Ok(())
+            }
+            AudioTarget::Application { name } => {
+                set_session_mute_by_name(&enumerator, name, muted)
+            }
+            AudioTarget::FocusedApplication => {
+                warn!("FocusedApplication mute not yet implemented on Windows");
+                Ok(())
+            }
         }
-        Ok(())
     }
 
-    fn is_muted(&self, _target: &AudioTarget) -> anyhow::Result<bool> {
+    fn is_muted(&self, target: &AudioTarget) -> anyhow::Result<bool> {
         let enumerator = Self::enumerator()?;
-        let device = unsafe {
-            enumerator
-                .GetDefaultAudioEndpoint(eRender, eConsole)
-                .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
-        };
-        let ep_vol = Self::endpoint_volume(&device)?;
-        let muted: BOOL = unsafe {
-            ep_vol
-                .GetMute()
-                .map_err(|e| anyhow::anyhow!("GetMute: {e}"))?
-        };
-        Ok(muted.as_bool())
+        match target {
+            AudioTarget::SystemMaster | AudioTarget::Device { .. } => {
+                let device = match target {
+                    AudioTarget::SystemMaster => unsafe {
+                        enumerator
+                            .GetDefaultAudioEndpoint(eRender, eConsole)
+                            .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
+                    },
+                    AudioTarget::Device { id } => unsafe {
+                        let id_wide: Vec<u16> = id.encode_utf16().chain(Some(0)).collect();
+                        enumerator
+                            .GetDevice(windows::core::PCWSTR(id_wide.as_ptr()))
+                            .map_err(|e| anyhow::anyhow!("GetDevice: {e}"))?
+                    },
+                    _ => unreachable!(),
+                };
+                let ep_vol = Self::endpoint_volume(&device)?;
+                let muted: BOOL = unsafe {
+                    ep_vol
+                        .GetMute()
+                        .map_err(|e| anyhow::anyhow!("GetMute: {e}"))?
+                };
+                Ok(muted.as_bool())
+            }
+            AudioTarget::Application { name } => {
+                get_session_muted_by_name(&enumerator, name)
+            }
+            AudioTarget::FocusedApplication => {
+                warn!("FocusedApplication mute query not yet implemented on Windows");
+                Ok(false)
+            }
+        }
     }
 
     fn set_default_output(&self, device_id: &str) -> anyhow::Result<()> {
         set_default_endpoint(device_id)
     }
 
+    /// Set the default input device. Uses the same undocumented IPolicyConfig
+    /// `SetDefaultEndpoint` API as output — the interface works for both render
+    /// and capture endpoints (the endpoint ID itself encodes direction).
     fn set_default_input(&self, device_id: &str) -> anyhow::Result<()> {
         set_default_endpoint(device_id)
     }
@@ -255,20 +298,40 @@ impl AudioBackend for WasapiBackend {
         Ok(devices)
     }
 
-    fn get_volume(&self, _target: &AudioTarget) -> anyhow::Result<f64> {
+    fn get_volume(&self, target: &AudioTarget) -> anyhow::Result<f64> {
         let enumerator = Self::enumerator()?;
-        let device = unsafe {
-            enumerator
-                .GetDefaultAudioEndpoint(eRender, eConsole)
-                .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
-        };
-        let ep_vol = Self::endpoint_volume(&device)?;
-        let vol = unsafe {
-            ep_vol
-                .GetMasterVolumeLevelScalar()
-                .map_err(|e| anyhow::anyhow!("GetMasterVolumeLevelScalar: {e}"))?
-        };
-        Ok(vol as f64)
+        match target {
+            AudioTarget::SystemMaster | AudioTarget::Device { .. } => {
+                let device = match target {
+                    AudioTarget::SystemMaster => unsafe {
+                        enumerator
+                            .GetDefaultAudioEndpoint(eRender, eConsole)
+                            .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
+                    },
+                    AudioTarget::Device { id } => unsafe {
+                        let id_wide: Vec<u16> = id.encode_utf16().chain(Some(0)).collect();
+                        enumerator
+                            .GetDevice(windows::core::PCWSTR(id_wide.as_ptr()))
+                            .map_err(|e| anyhow::anyhow!("GetDevice: {e}"))?
+                    },
+                    _ => unreachable!(),
+                };
+                let ep_vol = Self::endpoint_volume(&device)?;
+                let vol = unsafe {
+                    ep_vol
+                        .GetMasterVolumeLevelScalar()
+                        .map_err(|e| anyhow::anyhow!("GetMasterVolumeLevelScalar: {e}"))?
+                };
+                Ok(vol as f64)
+            }
+            AudioTarget::Application { name } => {
+                get_session_volume_by_name(&enumerator, name)
+            }
+            AudioTarget::FocusedApplication => {
+                warn!("FocusedApplication volume query not yet implemented on Windows");
+                Ok(0.0)
+            }
+        }
     }
 
     fn list_sessions(&self) -> anyhow::Result<Vec<AudioSessionInfo>> {
@@ -417,6 +480,165 @@ fn set_session_volume_by_name(
                     .map_err(|e| anyhow::anyhow!("SetMasterVolume: {e}"))?;
             }
             return Ok(());
+        }
+    }
+    anyhow::bail!("No audio session matching '{name}' found")
+}
+
+/// Set the mute state of the audio session whose display name contains `name`.
+fn set_session_mute_by_name(
+    enumerator: &IMMDeviceEnumerator,
+    name: &str,
+    muted: bool,
+) -> anyhow::Result<()> {
+    let device = unsafe {
+        enumerator
+            .GetDefaultAudioEndpoint(eRender, eConsole)
+            .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
+    };
+    let session_manager = unsafe {
+        device
+            .Activate::<windows::Win32::Media::Audio::IAudioSessionManager2>(CLSCTX_ALL, None)
+            .map_err(|e| anyhow::anyhow!("Activate IAudioSessionManager2: {e}"))?
+    };
+    let session_enum = unsafe {
+        session_manager
+            .GetSessionEnumerator()
+            .map_err(|e| anyhow::anyhow!("GetSessionEnumerator: {e}"))?
+    };
+    let count = unsafe {
+        session_enum
+            .GetCount()
+            .map_err(|e| anyhow::anyhow!("GetCount: {e}"))?
+    };
+
+    let name_lower = name.to_lowercase();
+    for i in 0..count {
+        let session_ctrl = unsafe {
+            session_enum
+                .GetSession(i)
+                .map_err(|e| anyhow::anyhow!("GetSession: {e}"))?
+        };
+        let display_name = unsafe {
+            session_ctrl
+                .GetDisplayName()
+                .ok()
+                .and_then(|p| p.to_string().ok())
+                .unwrap_or_default()
+        };
+        if display_name.to_lowercase().contains(&name_lower) {
+            let simple_vol: windows::Win32::Media::Audio::ISimpleAudioVolume =
+                session_ctrl.cast().map_err(|e| anyhow::anyhow!("cast ISimpleAudioVolume: {e}"))?;
+            unsafe {
+                simple_vol
+                    .SetMute(muted, std::ptr::null())
+                    .map_err(|e| anyhow::anyhow!("SetMute: {e}"))?;
+            }
+            return Ok(());
+        }
+    }
+    anyhow::bail!("No audio session matching '{name}' found")
+}
+
+/// Get the mute state of the audio session whose display name contains `name`.
+fn get_session_muted_by_name(
+    enumerator: &IMMDeviceEnumerator,
+    name: &str,
+) -> anyhow::Result<bool> {
+    let device = unsafe {
+        enumerator
+            .GetDefaultAudioEndpoint(eRender, eConsole)
+            .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
+    };
+    let session_manager = unsafe {
+        device
+            .Activate::<windows::Win32::Media::Audio::IAudioSessionManager2>(CLSCTX_ALL, None)
+            .map_err(|e| anyhow::anyhow!("Activate IAudioSessionManager2: {e}"))?
+    };
+    let session_enum = unsafe {
+        session_manager
+            .GetSessionEnumerator()
+            .map_err(|e| anyhow::anyhow!("GetSessionEnumerator: {e}"))?
+    };
+    let count = unsafe {
+        session_enum
+            .GetCount()
+            .map_err(|e| anyhow::anyhow!("GetCount: {e}"))?
+    };
+
+    let name_lower = name.to_lowercase();
+    for i in 0..count {
+        let session_ctrl = unsafe {
+            session_enum
+                .GetSession(i)
+                .map_err(|e| anyhow::anyhow!("GetSession: {e}"))?
+        };
+        let display_name = unsafe {
+            session_ctrl
+                .GetDisplayName()
+                .ok()
+                .and_then(|p| p.to_string().ok())
+                .unwrap_or_default()
+        };
+        if display_name.to_lowercase().contains(&name_lower) {
+            let simple_vol: windows::Win32::Media::Audio::ISimpleAudioVolume =
+                session_ctrl.cast().map_err(|e| anyhow::anyhow!("cast ISimpleAudioVolume: {e}"))?;
+            let muted: BOOL = unsafe {
+                simple_vol.GetMute().unwrap_or(BOOL(0))
+            };
+            return Ok(muted.as_bool());
+        }
+    }
+    anyhow::bail!("No audio session matching '{name}' found")
+}
+
+/// Get the volume of the audio session whose display name contains `name`.
+fn get_session_volume_by_name(
+    enumerator: &IMMDeviceEnumerator,
+    name: &str,
+) -> anyhow::Result<f64> {
+    let device = unsafe {
+        enumerator
+            .GetDefaultAudioEndpoint(eRender, eConsole)
+            .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
+    };
+    let session_manager = unsafe {
+        device
+            .Activate::<windows::Win32::Media::Audio::IAudioSessionManager2>(CLSCTX_ALL, None)
+            .map_err(|e| anyhow::anyhow!("Activate IAudioSessionManager2: {e}"))?
+    };
+    let session_enum = unsafe {
+        session_manager
+            .GetSessionEnumerator()
+            .map_err(|e| anyhow::anyhow!("GetSessionEnumerator: {e}"))?
+    };
+    let count = unsafe {
+        session_enum
+            .GetCount()
+            .map_err(|e| anyhow::anyhow!("GetCount: {e}"))?
+    };
+
+    let name_lower = name.to_lowercase();
+    for i in 0..count {
+        let session_ctrl = unsafe {
+            session_enum
+                .GetSession(i)
+                .map_err(|e| anyhow::anyhow!("GetSession: {e}"))?
+        };
+        let display_name = unsafe {
+            session_ctrl
+                .GetDisplayName()
+                .ok()
+                .and_then(|p| p.to_string().ok())
+                .unwrap_or_default()
+        };
+        if display_name.to_lowercase().contains(&name_lower) {
+            let simple_vol: windows::Win32::Media::Audio::ISimpleAudioVolume =
+                session_ctrl.cast().map_err(|e| anyhow::anyhow!("cast ISimpleAudioVolume: {e}"))?;
+            let vol = unsafe {
+                simple_vol.GetMasterVolume().unwrap_or(0.0) as f64
+            };
+            return Ok(vol);
         }
     }
     anyhow::bail!("No audio session matching '{name}' found")

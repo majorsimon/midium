@@ -19,7 +19,7 @@ pub struct MidiManager {
     /// Track which ports we've already connected to (by name).
     connected_ports: Arc<Mutex<HashSet<String>>>,
     /// Keep input connections alive — dropping them closes the port.
-    _connections: Arc<Mutex<Vec<MidiInputConnection<()>>>>,
+    _connections: Arc<Mutex<HashMap<String, MidiInputConnection<()>>>>,
     /// Output connections keyed by port name — used for LED feedback.
     out_connections: Arc<Mutex<HashMap<String, MidiOutputConnection>>>,
 }
@@ -31,7 +31,7 @@ impl MidiManager {
             poll_interval: Duration::from_secs(poll_interval_secs),
             profiles: Arc::new(profiles),
             connected_ports: Arc::new(Mutex::new(HashSet::new())),
-            _connections: Arc::new(Mutex::new(Vec::new())),
+            _connections: Arc::new(Mutex::new(HashMap::new())),
             out_connections: Arc::new(Mutex::new(HashMap::<String, MidiOutputConnection>::new())),
         }
     }
@@ -91,7 +91,29 @@ impl MidiManager {
         };
 
         let ports = midi_in.ports();
+        let current_port_names: HashSet<String> = ports
+            .iter()
+            .filter_map(|p| midi_in.port_name(p).ok())
+            .collect();
+
+        // Detect disconnected devices: any port in connected_ports that is no
+        // longer visible has been unplugged.
         let mut connected = self.connected_ports.lock().unwrap();
+        let stale: Vec<String> = connected
+            .iter()
+            .filter(|name| !current_port_names.contains(*name))
+            .cloned()
+            .collect();
+
+        for name in stale {
+            info!(port = %name, "MIDI device disconnected");
+            connected.remove(&name);
+            self._connections.lock().unwrap().remove(&name);
+            self.out_connections.lock().unwrap().remove(&name);
+            self.event_bus.publish(AppEvent::DeviceDisconnected {
+                device: name,
+            });
+        }
 
         for port in &ports {
             let port_name = match midi_in.port_name(port) {
@@ -188,7 +210,7 @@ impl MidiManager {
                         device: port_name.clone(),
                     });
                     connected.insert(port_name.clone());
-                    self._connections.lock().unwrap().push(connection);
+                    self._connections.lock().unwrap().insert(port_name.clone(), connection);
                 }
                 Err(e) => {
                     warn!(port = %port_name, "Failed to connect MIDI input: {e}");

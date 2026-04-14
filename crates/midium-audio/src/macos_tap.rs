@@ -104,6 +104,12 @@ pub struct AudioTapManager {
     taps: Arc<Mutex<HashMap<String, TapState>>>,
 }
 
+impl Default for AudioTapManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AudioTapManager {
     pub fn new() -> Self {
         debug!("AudioTapManager created (macOS 14.2+ Audio Tap API)");
@@ -265,7 +271,7 @@ impl AudioTapManager {
         let mut tap_id: AudioObjectID = kAudioObjectUnknown;
         let status = unsafe {
             AudioHardwareCreateProcessTap(
-                Retained::as_ptr(&tap_desc) as *const AnyObject,
+                Retained::as_ptr(&tap_desc),
                 &mut tap_id,
             )
         };
@@ -463,8 +469,8 @@ fn create_tap_description(pid: u32) -> anyhow::Result<Retained<AnyObject>> {
             anyhow::bail!("initStereoMixdownOfProcesses returned nil");
         }
 
-        Ok(Retained::from_raw(desc)
-            .ok_or_else(|| anyhow::anyhow!("Failed to retain CATapDescription"))?)
+        Retained::from_raw(desc)
+            .ok_or_else(|| anyhow::anyhow!("Failed to retain CATapDescription"))
     }
 }
 
