@@ -98,17 +98,14 @@ impl PulseConn {
             if let pa::callbacks::ListResult::Item(info) = item {
                 if let Ok(mut guard) = result_c.lock() {
                     if let Some(v) = guard.as_mut() {
-                        v.push(info.clone().to_owned());
+                        v.push(info.to_owned());
                     }
                 }
             }
         });
 
-        loop {
-            match op.get_state() {
-                OpState::Running => self.mainloop.wait(),
-                _ => break,
-            }
+        while let OpState::Running = op.get_state() {
+            self.mainloop.wait();
         }
         self.mainloop.unlock();
 
@@ -129,17 +126,14 @@ impl PulseConn {
             if let pa::callbacks::ListResult::Item(info) = item {
                 if let Ok(mut guard) = result_c.lock() {
                     if let Some(v) = guard.as_mut() {
-                        v.push(info.clone().to_owned());
+                        v.push(info.to_owned());
                     }
                 }
             }
         });
 
-        loop {
-            match op.get_state() {
-                OpState::Running => self.mainloop.wait(),
-                _ => break,
-            }
+        while let OpState::Running = op.get_state() {
+            self.mainloop.wait();
         }
         self.mainloop.unlock();
 
@@ -160,17 +154,14 @@ impl PulseConn {
             if let pa::callbacks::ListResult::Item(info) = item {
                 if let Ok(mut guard) = result_c.lock() {
                     if let Some(v) = guard.as_mut() {
-                        v.push(info.clone().to_owned());
+                        v.push(info.to_owned());
                     }
                 }
             }
         });
 
-        loop {
-            match op.get_state() {
-                OpState::Running => self.mainloop.wait(),
-                _ => break,
-            }
+        while let OpState::Running = op.get_state() {
+            self.mainloop.wait();
         }
         self.mainloop.unlock();
 
@@ -183,11 +174,8 @@ impl PulseConn {
         let mut introspect = self.context.introspect();
 
         let op = introspect.set_sink_volume_by_name(name, cvols, None);
-        loop {
-            match op.get_state() {
-                OpState::Running => self.mainloop.wait(),
-                _ => break,
-            }
+        while let OpState::Running = op.get_state() {
+            self.mainloop.wait();
         }
         self.mainloop.unlock();
         Ok(())
@@ -198,11 +186,8 @@ impl PulseConn {
         let mut introspect = self.context.introspect();
 
         let op = introspect.set_sink_input_volume(index, cvols, None);
-        loop {
-            match op.get_state() {
-                OpState::Running => self.mainloop.wait(),
-                _ => break,
-            }
+        while let OpState::Running = op.get_state() {
+            self.mainloop.wait();
         }
         self.mainloop.unlock();
         Ok(())
@@ -213,11 +198,8 @@ impl PulseConn {
         let mut introspect = self.context.introspect();
 
         let op = introspect.set_sink_mute_by_name(name, mute, None);
-        loop {
-            match op.get_state() {
-                OpState::Running => self.mainloop.wait(),
-                _ => break,
-            }
+        while let OpState::Running = op.get_state() {
+            self.mainloop.wait();
         }
         self.mainloop.unlock();
         Ok(())
@@ -232,14 +214,11 @@ impl PulseConn {
         let introspect = self.context.introspect();
 
         let op = introspect.get_server_info(move |info: &pa::context::introspect::ServerInfo<'_>| {
-            *result_c.lock().unwrap() = Some(info.clone().to_owned());
+            *result_c.lock().unwrap() = Some(info.to_owned());
         });
 
-        loop {
-            match op.get_state() {
-                OpState::Running => self.mainloop.wait(),
-                _ => break,
-            }
+        while let OpState::Running = op.get_state() {
+            self.mainloop.wait();
         }
         self.mainloop.unlock();
 

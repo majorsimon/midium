@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from "svelte";
+  import { createEventDispatcher, onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import type { DeviceProfile, ProfileControl, ProfileControlType } from "./types";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import type { DeviceProfile, ProfileControl, ProfileControlType, MidiEvent } from "./types";
 
   /** List of connected MIDI port names — passed in from +page.svelte. */
   export let connectedDevices: string[] = [];
@@ -21,10 +22,42 @@
   let profiles: DeviceProfile[] = [];
   let selectedDevice: string | null = null;
 
+  /** Last MIDI value received per control, keyed by "ch:type:number" */
+  let lastValues: Record<string, number> = {};
+
+  function controlKey(channel: number, midiType: string, number: number): string {
+    return `${channel}:${midiType}:${number}`;
+  }
+
+  function lastValueForControl(ctrl: ProfileControl): number | undefined {
+    const mt = ctrl.midi_type ?? "cc";
+    return lastValues[controlKey(ctrl.channel, mt, ctrl.number)];
+  }
+
+  let unlistens: UnlistenFn[] = [];
+
   onMount(async () => {
     profiles = await invoke<DeviceProfile[]>("list_profiles").catch(() => []);
     if (connectedDevices.length > 0) selectedDevice = connectedDevices[0];
+
+    unlistens.push(await listen<MidiEvent>("midi-event", (e) => {
+      if (selectedDevice && !e.payload.device.includes(selectedDevice)) return;
+      const msg = e.payload.message;
+      const ch = e.payload.channel;
+      if (msg.ControlChange !== undefined) {
+        lastValues[controlKey(ch, "cc", msg.ControlChange.control)] = msg.ControlChange.value;
+        lastValues = lastValues;
+      } else if (msg.NoteOn !== undefined) {
+        lastValues[controlKey(ch, "note", msg.NoteOn.note)] = msg.NoteOn.velocity;
+        lastValues = lastValues;
+      } else if (msg.NoteOff !== undefined) {
+        lastValues[controlKey(ch, "note", msg.NoteOff.note)] = 0;
+        lastValues = lastValues;
+      }
+    }));
   });
+
+  onDestroy(() => unlistens.forEach(u => u()));
 
   // Re-select when devices change.
   $: if (connectedDevices.length > 0 && !selectedDevice) {
@@ -170,6 +203,9 @@
                         <span class="ctrl-sub">
                           {ctrl.midi_type === "note" ? `Note ${ctrl.number}` : `CC ${ctrl.number}`}
                           {ctrl.channel > 0 ? ` ch${ctrl.channel + 1}` : ""}
+                          {#if lastValueForControl(ctrl) !== undefined}
+                            <span class="ctrl-val">= {lastValueForControl(ctrl)}</span>
+                          {/if}
                         </span>
                       </button>
                     {/each}
@@ -371,6 +407,10 @@
     color: var(--text-muted);
     text-align: center;
     white-space: nowrap;
+  }
+  .ctrl-val {
+    color: var(--accent);
+    font-weight: 700;
   }
 
   /* Unknown device */

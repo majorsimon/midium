@@ -1,4 +1,4 @@
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use crate::types::{Action, AudioTarget};
 
 /// Trait implemented by the audio backend so the dispatcher can call into it.
@@ -15,6 +15,13 @@ pub trait VolumeControl: Send + Sync {
     }
 }
 
+/// Trait for listing audio devices, used by the dispatcher for CycleDevices actions.
+/// Kept separate from VolumeControl so it can be optionally provided.
+pub trait DeviceLister: Send + Sync {
+    fn list_output_device_ids(&self) -> Vec<(String, bool)>; // (id, is_default)
+    fn list_input_device_ids(&self) -> Vec<(String, bool)>;
+}
+
 /// Trait implemented by the shortcuts backend (media keys, keyboard shortcuts).
 ///
 /// Kept in midium-core so ActionDispatcher can hold it without creating a
@@ -27,18 +34,44 @@ pub trait ShortcutExecutor: Send + Sync {
 pub struct ActionDispatcher {
     audio: Box<dyn VolumeControl>,
     shortcuts: Option<Box<dyn ShortcutExecutor>>,
+    devices: Option<Box<dyn DeviceLister>>,
 }
 
 impl ActionDispatcher {
     pub fn new(audio: Box<dyn VolumeControl>) -> Self {
-        Self { audio, shortcuts: None }
+        Self { audio, shortcuts: None, devices: None }
     }
 
     pub fn with_shortcuts(
         audio: Box<dyn VolumeControl>,
         shortcuts: Box<dyn ShortcutExecutor>,
     ) -> Self {
-        Self { audio, shortcuts: Some(shortcuts) }
+        Self { audio, shortcuts: Some(shortcuts), devices: None }
+    }
+
+    pub fn with_device_lister(mut self, lister: Box<dyn DeviceLister>) -> Self {
+        self.devices = Some(lister);
+        self
+    }
+
+    /// Cycle to the next device in the list, wrapping around.
+    fn cycle_device(&self, devices: Vec<(String, bool)>, is_output: bool) {
+        if devices.is_empty() {
+            return;
+        }
+        let current_idx = devices.iter().position(|(_, def)| *def).unwrap_or(0);
+        let next_idx = (current_idx + 1) % devices.len();
+        let next_id = &devices[next_idx].0;
+        let direction = if is_output { "output" } else { "input" };
+        info!(from = current_idx, to = next_idx, device = %next_id, "Cycling {direction} device");
+        let result = if is_output {
+            self.audio.set_default_output(next_id)
+        } else {
+            self.audio.set_default_input(next_id)
+        };
+        if let Err(e) = result {
+            warn!("Failed to cycle {direction} device: {e}");
+        }
     }
 
     /// Execute an action with the given transformed value (0.0–1.0).
@@ -80,12 +113,24 @@ impl ActionDispatcher {
             }
             // Handled by PluginManager's own EventBus subscription
             Action::RunPluginAction { .. } => {}
+            Action::CycleOutputDevices => {
+                if let Some(lister) = &self.devices {
+                    self.cycle_device(lister.list_output_device_ids(), true);
+                } else {
+                    warn!("CycleOutputDevices: no device lister registered");
+                }
+            }
+            Action::CycleInputDevices => {
+                if let Some(lister) = &self.devices {
+                    self.cycle_device(lister.list_input_device_ids(), false);
+                } else {
+                    warn!("CycleInputDevices: no device lister registered");
+                }
+            }
             // Shortcuts / media keys
             Action::MediaPlayPause
             | Action::MediaNext
             | Action::MediaPrev
-            | Action::CycleOutputDevices
-            | Action::CycleInputDevices
             | Action::SendKeyboardShortcut { .. } => {
                 if let Some(sc) = &self.shortcuts {
                     sc.execute(action);

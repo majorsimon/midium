@@ -82,11 +82,6 @@ fn dispatch_action(enigo: &mut enigo::Enigo, action: &Action) {
             debug!(?keys, "shortcut: SendKeyboardShortcut");
             send_key_combo(enigo, keys);
         }
-        Action::CycleOutputDevices | Action::CycleInputDevices => {
-            // Audio device cycling requires querying the audio backend; the
-            // ActionDispatcher handles these via VolumeControl once implemented.
-            warn!(?action, "CycleDevices not yet implemented in shortcut handler");
-        }
         other => {
             warn!(?other, "ShortcutHandler received unexpected action type");
         }
