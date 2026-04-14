@@ -83,11 +83,18 @@ jobs:
         if: matrix.platform == 'macos'
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          cd app/src-tauri/target/release/bundle/macos
-          zip -r --symlinks \
-            "Midium_${VERSION}_macos.app.zip" \
-            Midium.app
-          echo "APP_ZIP=app/src-tauri/target/release/bundle/macos/Midium_${VERSION}_macos.app.zip" >> "$GITHUB_ENV"
+          APP_PATH=$(find app/src-tauri/target/release/bundle -name "*.app" -maxdepth 3 | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app bundle found under app/src-tauri/target/release/bundle"
+            find app/src-tauri/target/release/bundle -maxdepth 4 | head -30 || true
+            exit 1
+          fi
+          APP_DIR=$(dirname "$APP_PATH")
+          APP_NAME=$(basename "$APP_PATH")
+          ZIP_NAME="Midium_${VERSION}_macos.app.zip"
+          cd "$APP_DIR"
+          zip -r --symlinks "$ZIP_NAME" "$APP_NAME"
+          echo "APP_ZIP=${APP_DIR}/${ZIP_NAME}" >> "$GITHUB_ENV"
 
       - name: Upload macOS .app.zip
         if: matrix.platform == 'macos'
