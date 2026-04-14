@@ -1,13 +1,41 @@
-use windows::core::Interface;
+use windows::core::{Interface, PCWSTR};
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::Media::Audio::{
-    eCapture, eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator,
-    DEVICE_STATE_ACTIVE,
+    eCapture, eCommunications, eConsole, eMultimedia, eRender,
+    IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE, ERole,
 };
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_APARTMENTTHREADED, STGM_READ,
 };
+
+// ---------------------------------------------------------------------------
+// IPolicyConfig — undocumented COM interface for setting the default audio
+// endpoint on Windows Vista through 11.
+//
+// CLSID: {870AF99C-171D-4F9E-AF0D-E63DF40C2BC9}  (CPolicyConfigClient)
+// IID:   {F8679F50-850A-41CF-9C72-430F290290C8}
+// ---------------------------------------------------------------------------
+
+#[windows::core::interface("F8679F50-850A-41CF-9C72-430F290290C8")]
+unsafe trait IPolicyConfig: windows::core::IUnknown {
+    // Stub methods that precede SetDefaultEndpoint in the vtable.
+    fn GetMixFormat(&self, device: PCWSTR, format: *mut *mut u8) -> windows::core::HRESULT;
+    fn GetDeviceFormat(&self, device: PCWSTR, default: i32, format: *mut *mut u8) -> windows::core::HRESULT;
+    fn ResetDeviceFormat(&self, device: PCWSTR) -> windows::core::HRESULT;
+    fn SetDeviceFormat(&self, device: PCWSTR, endpoint_fmt: *mut u8, mix_fmt: *mut u8) -> windows::core::HRESULT;
+    fn GetProcessingPeriod(&self, device: PCWSTR, default: i32, default_period: *mut i64, min_period: *mut i64) -> windows::core::HRESULT;
+    fn SetProcessingPeriod(&self, device: PCWSTR, period: *mut i64) -> windows::core::HRESULT;
+    fn GetShareMode(&self, device: PCWSTR, mode: *mut u32) -> windows::core::HRESULT;
+    fn SetShareMode(&self, device: PCWSTR, mode: u32) -> windows::core::HRESULT;
+    fn GetPropertyValue(&self, device: PCWSTR, fx_store: i32, key: *const u32, value: *mut u8) -> windows::core::HRESULT;
+    fn SetPropertyValue(&self, device: PCWSTR, fx_store: i32, key: *const u32, value: *mut u8) -> windows::core::HRESULT;
+    fn SetDefaultEndpoint(&self, device: PCWSTR, role: ERole) -> windows::core::HRESULT;
+    fn SetEndpointVisibility(&self, device: PCWSTR, visible: i32) -> windows::core::HRESULT;
+}
+
+const CLSID_POLICY_CONFIG_CLIENT: windows::core::GUID =
+    windows::core::GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63df40c2bc9);
 
 use tracing::{debug, warn};
 
@@ -146,13 +174,24 @@ impl VolumeControl for WasapiBackend {
     }
 
     fn set_default_output(&self, device_id: &str) -> anyhow::Result<()> {
-        warn!(device_id, "Default output switching not yet implemented on Windows (IPolicyConfig required)");
-        Ok(())
+        set_default_endpoint(device_id)
     }
 
     fn set_default_input(&self, device_id: &str) -> anyhow::Result<()> {
-        warn!(device_id, "Default input switching not yet implemented on Windows");
-        Ok(())
+        set_default_endpoint(device_id)
+    }
+
+    fn is_default_output(&self, device_id: &str) -> anyhow::Result<bool> {
+        let enumerator = Self::enumerator()?;
+        let default_device = unsafe {
+            enumerator
+                .GetDefaultAudioEndpoint(eRender, eConsole)
+                .map_err(|e| anyhow::anyhow!("GetDefaultAudioEndpoint: {e}"))?
+        };
+        let default_id = unsafe {
+            default_device.GetId().ok().and_then(|p| p.to_string().ok()).unwrap_or_default()
+        };
+        Ok(default_id == device_id)
     }
 }
 
@@ -300,10 +339,32 @@ impl AudioBackend for WasapiBackend {
     fn capabilities(&self) -> AudioCapabilities {
         AudioCapabilities {
             per_app_volume: true,
-            device_switching: false,
-            input_device_switching: false,
+            device_switching: true,
+            input_device_switching: true,
         }
     }
+}
+
+/// Set the given endpoint as the default for all three roles (Console,
+/// Multimedia, Communications) using the undocumented IPolicyConfig interface.
+fn set_default_endpoint(device_id: &str) -> anyhow::Result<()> {
+    let id_wide: Vec<u16> = device_id.encode_utf16().chain(Some(0)).collect();
+    unsafe {
+        let policy: IPolicyConfig = CoCreateInstance(
+            &CLSID_POLICY_CONFIG_CLIENT,
+            None,
+            CLSCTX_ALL,
+        )
+        .map_err(|e| anyhow::anyhow!("CoCreateInstance IPolicyConfig: {e}"))?;
+
+        for role in [eConsole, eMultimedia, eCommunications] {
+            policy
+                .SetDefaultEndpoint(PCWSTR(id_wide.as_ptr()), role)
+                .ok()
+                .map_err(|e| anyhow::anyhow!("SetDefaultEndpoint: {e}"))?;
+        }
+    }
+    Ok(())
 }
 
 /// Set the volume of the audio session whose display name contains `name`.
