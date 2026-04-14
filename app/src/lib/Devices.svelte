@@ -1,26 +1,24 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import type { DeviceProfile, ProfileControl, ProfileControlType, MidiEvent } from "./types";
 
-  /** List of connected MIDI port names — passed in from +page.svelte. */
-  export let connectedDevices: string[] = [];
-
-  const dispatch = createEventDispatcher<{
-    /** Fired when the user clicks a control; parent navigates to Mappings tab
-     *  and pre-fills the form with these values. */
-    "open-mapping": {
+  interface Props {
+    connectedDevices?: string[];
+    onOpenMapping?: (detail: {
       device: string;
       channel: number;
       controlTypeName: "CC" | "Note" | "PitchBend";
       controlNumber: number;
       profileControlType?: ProfileControlType;
-    };
-  }>();
+    }) => void;
+  }
 
-  let profiles: DeviceProfile[] = [];
-  let selectedDevice: string | null = null;
+  let { connectedDevices = [], onOpenMapping }: Props = $props();
+
+  let profiles: DeviceProfile[] = $state([]);
+  let selectedDevice: string | null = $state(null);
 
   /** Last MIDI value received per control, keyed by "ch:type:number" */
   let lastValues: Record<string, number> = {};
@@ -59,25 +57,8 @@
 
   onDestroy(() => unlistens.forEach(u => u()));
 
-  // Re-select when devices change.
-  $: if (connectedDevices.length > 0 && !selectedDevice) {
-    selectedDevice = connectedDevices[0];
-  } else if (selectedDevice && !connectedDevices.includes(selectedDevice)) {
-    selectedDevice = connectedDevices[0] ?? null;
-  }
 
-  $: matchedProfile = selectedDevice
-    ? profiles.find(p =>
-        p.match_patterns.some(pat =>
-          selectedDevice!.toLowerCase().includes(pat.toLowerCase())
-        )
-      ) ?? null
-    : null;
 
-  // Group controls by section for the schematic view.
-  $: sections = matchedProfile
-    ? groupBySectionOrType(matchedProfile.controls)
-    : [];
 
   function groupBySectionOrType(
     controls: ProfileControl[]
@@ -114,7 +95,7 @@
   function handleControlClick(c: ProfileControl) {
     if (!selectedDevice) return;
     const midiType = c.midi_type ?? "cc";
-    dispatch("open-mapping", {
+    onOpenMapping?.({
       device: selectedDevice,
       channel: c.channel,
       controlTypeName: midiType === "note" ? "Note" : midiType === "pitch_bend" ? "PitchBend" : "CC",
@@ -122,6 +103,24 @@
       profileControlType: c.control_type,
     });
   }
+  $effect(() => {
+    if (connectedDevices.length > 0 && !selectedDevice) {
+      selectedDevice = connectedDevices[0];
+    } else if (selectedDevice && !connectedDevices.includes(selectedDevice)) {
+      selectedDevice = connectedDevices[0] ?? null;
+    }
+  });
+  let matchedProfile = $derived(selectedDevice
+    ? profiles.find(p =>
+        p.match_patterns.some(pat =>
+          selectedDevice!.toLowerCase().includes(pat.toLowerCase())
+        )
+      ) ?? null
+    : null);
+  // Group controls by section for the schematic view.
+  let sections = $derived(matchedProfile
+    ? groupBySectionOrType(matchedProfile.controls)
+    : []);
 </script>
 
 <div class="devices-view">
@@ -147,7 +146,7 @@
         <button
           class="device-tab"
           class:active={selectedDevice === dev}
-          on:click={() => selectedDevice = dev}
+          onclick={() => selectedDevice = dev}
           title={dev}
         >
           <span class="tab-dot" class:matched={profiles.some(p =>
@@ -195,7 +194,7 @@
                         class:ctrl-knob={ctrl.control_type === "knob"}
                         class:ctrl-encoder={ctrl.control_type === "encoder"}
                         class:ctrl-button={ctrl.control_type === "button"}
-                        on:click={() => handleControlClick(ctrl)}
+                        onclick={() => handleControlClick(ctrl)}
                         title={`${ctrl.label} — click to add mapping`}
                       >
                         <span class="ctrl-icon">{controlIcon(ctrl)}</span>

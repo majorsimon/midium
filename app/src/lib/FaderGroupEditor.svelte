@@ -16,61 +16,32 @@
   // State
   // ---------------------------------------------------------------------------
 
-  let faderGroups: FaderGroup[] = [];
-  let profiles: DeviceProfile[] = [];
-  let midiPorts: string[] = [];
-  let outputDevices: AudioDeviceInfo[] = [];
-  let inputDevices: AudioDeviceInfo[] = [];
-  let sessions: AudioSessionInfo[] = [];
+  let faderGroups: FaderGroup[] = $state([]);
+  let profiles: DeviceProfile[] = $state([]);
+  let midiPorts: string[] = $state([]);
+  let outputDevices: AudioDeviceInfo[] = $state([]);
+  let inputDevices: AudioDeviceInfo[] = $state([]);
+  let sessions: AudioSessionInfo[] = $state([]);
   let caps: AudioCapabilities = { per_app_volume: false, device_switching: false, input_device_switching: false };
 
 
 
-  let showForm = false;
-  let editingIndex: number | null = null; // null = adding new
-  let pendingDeleteIndex: number | null = null;
+  let showForm = $state(false);
+  let editingIndex: number | null = $state(null); // null = adding new
+  let pendingDeleteIndex: number | null = $state(null);
 
   // Form state
-  let formDevice = "";
-  let formGroup = 1;
-  let formTargetEncoded = "SystemMaster"; // "SystemMaster" | "FocusedApplication" | "app:Name" | "device:id"
-  let formTransform: FaderGroup["transform"] = "Logarithmic";
+  let formDevice = $state("");
+  let formGroup = $state(1);
+  let formTargetEncoded = $state("SystemMaster"); // "SystemMaster" | "FocusedApplication" | "app:Name" | "device:id"
+  let formTransform: FaderGroup["transform"] = $state("Logarithmic");
 
   // Profile group detection: listen for a MIDI event to auto-fill device.
-  let detectingDevice = false;
+  let detectingDevice = $state(false);
 
-  // ---------------------------------------------------------------------------
-  // Derived: profile groups available for the selected device
-  // ---------------------------------------------------------------------------
 
-  $: selectedProfile = profiles.find(p =>
-    p.match_patterns.some(pat =>
-      formDevice.toLowerCase().includes(pat.toLowerCase()) ||
-      pat.toLowerCase().includes(formDevice.toLowerCase())
-    )
-  );
 
-  /** Unique group numbers in the selected profile that contain a slider. */
-  $: profileGroups = (() => {
-    if (!selectedProfile) return [] as number[];
-    const seen = new Set<number>();
-    for (const c of selectedProfile.controls) {
-      if ((c.control_type === "slider" || c.control_type === "encoder") && c.group != null) {
-        seen.add(c.group);
-      }
-    }
-    return [...seen].sort((a, b) => a - b);
-  })();
 
-  // When a profile is matched and has groups, auto-select the first available group.
-  $: if (profileGroups.length > 0 && !profileGroups.includes(formGroup)) {
-    formGroup = profileGroups[0];
-  }
-
-  // Auto-update default transform when user switches groups (encoder vs slider).
-  $: if (showForm && editingIndex === null && selectedProfile) {
-    formTransform = defaultTransformForGroup(formGroup);
-  }
 
   // Label for a profile group's slider/encoder control.
   function profileGroupLabel(g: number): string {
@@ -218,16 +189,6 @@
     return null;
   }
 
-  $: resolvedTargetLabels = faderGroups.map(g => {
-    if (g.target === "SystemMaster") return "System Master";
-    if (g.target === "FocusedApplication") return "Focused App";
-    if (typeof g.target === "object" && "Application" in g.target) return g.target.Application.name;
-    if (typeof g.target === "object" && "Device" in g.target) {
-      const id = g.target.Device.id;
-      return [...outputDevices, ...inputDevices].find(d => d.id === id)?.name ?? id;
-    }
-    return "?";
-  });
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -259,6 +220,47 @@
   onDestroy(() => {
     unlistens.forEach(u => u());
   });
+  // ---------------------------------------------------------------------------
+  // Derived: profile groups available for the selected device
+  // ---------------------------------------------------------------------------
+
+  let selectedProfile = $derived(profiles.find(p =>
+    p.match_patterns.some(pat =>
+      formDevice.toLowerCase().includes(pat.toLowerCase()) ||
+      pat.toLowerCase().includes(formDevice.toLowerCase())
+    )
+  ));
+  /** Unique group numbers in the selected profile that contain a slider. */
+  let profileGroups = $derived((() => {
+    if (!selectedProfile) return [] as number[];
+    const seen = new Set<number>();
+    for (const c of selectedProfile.controls) {
+      if ((c.control_type === "slider" || c.control_type === "encoder") && c.group != null) {
+        seen.add(c.group);
+      }
+    }
+    return [...seen].sort((a, b) => a - b);
+  })());
+  $effect(() => {
+    if (profileGroups.length > 0 && !profileGroups.includes(formGroup)) {
+      formGroup = profileGroups[0];
+    }
+  });
+  $effect(() => {
+    if (showForm && editingIndex === null && selectedProfile) {
+      formTransform = defaultTransformForGroup(formGroup);
+    }
+  });
+  let resolvedTargetLabels = $derived(faderGroups.map(g => {
+    if (g.target === "SystemMaster") return "System Master";
+    if (g.target === "FocusedApplication") return "Focused App";
+    if (typeof g.target === "object" && "Application" in g.target) return g.target.Application.name;
+    if (typeof g.target === "object" && "Device" in g.target) {
+      const id = g.target.Device.id;
+      return [...outputDevices, ...inputDevices].find(d => d.id === id)?.name ?? id;
+    }
+    return "?";
+  }));
 </script>
 
 <div class="fader-groups">
@@ -273,7 +275,7 @@
       {/if}
     </div>
     <div class="header-right">
-      <button class="primary" on:click={showForm ? cancelForm : openAddForm}>
+      <button class="primary" onclick={showForm ? cancelForm : openAddForm}>
         {showForm ? "Cancel" : "+ Add Group"}
       </button>
     </div>
@@ -308,14 +310,14 @@
               {/if}
 
               {#if detectingDevice}
-                <button class="detect-btn detecting" on:click={() => {
+                <button class="detect-btn detecting" onclick={() => {
                   detectingDevice = false;
                   invoke("cancel_midi_learn").catch(() => {});
                 }}>
                   <span class="dot-pulse"></span> Cancel
                 </button>
               {:else}
-                <button class="detect-btn" title="Move any control on the device to auto-detect it" on:click={startDetect}>
+                <button class="detect-btn" title="Move any control on the device to auto-detect it" onclick={startDetect}>
                   Detect
                 </button>
               {/if}
@@ -334,7 +336,7 @@
                   <button
                     class="group-tile"
                     class:selected={formGroup === g}
-                    on:click={() => formGroup = g}
+                    onclick={() => formGroup = g}
                     title={profileGroupLabel(g)}
                   >
                     <span class="group-num">{g}</span>
@@ -364,7 +366,7 @@
           <div class="field">
             <label>Fader Curve</label>
             <select value={typeof formTransform === "string" ? formTransform : "RelativeEncoder"}
-              on:change={(e) => {
+              onchange={(e) => {
                 const v = e.currentTarget.value;
                 if (v === "RelativeEncoder") {
                   formTransform = { RelativeEncoder: { sensitivity: 0.01 } };
@@ -389,7 +391,7 @@
                 max="0.1"
                 step="0.005"
                 value={formTransform.RelativeEncoder.sensitivity}
-                on:input={(e) => {
+                oninput={(e) => {
                   formTransform = { RelativeEncoder: { sensitivity: parseFloat(e.currentTarget.value) || 0.01 } };
                 }}
               />
@@ -454,10 +456,10 @@
       </div>
 
       <div class="form-footer">
-        <button class="primary" on:click={saveGroup}>
+        <button class="primary" onclick={saveGroup}>
           {editingIndex !== null ? "Update Group" : "Save Group"}
         </button>
-        <button on:click={cancelForm}>Cancel</button>
+        <button onclick={cancelForm}>Cancel</button>
       </div>
     </div>
   {/if}
@@ -474,7 +476,7 @@
         to an audio target. The fader sets volume, M mutes, and the S/M/R
         button LEDs update automatically.
       </p>
-      <button class="primary" on:click={openAddForm}>+ Add Group</button>
+      <button class="primary" onclick={openAddForm}>+ Add Group</button>
     </div>
   {/if}
 
@@ -519,12 +521,12 @@
           <div class="col-del">
             {#if pendingDeleteIndex === i}
               <div class="del-confirm">
-                <button class="del-btn del-yes" title="Confirm" on:click={() => deleteGroup(i)}>✓</button>
-                <button class="del-btn del-no" title="Cancel" on:click={() => pendingDeleteIndex = null}>✗</button>
+                <button class="del-btn del-yes" title="Confirm" onclick={() => deleteGroup(i)}>✓</button>
+                <button class="del-btn del-no" title="Cancel" onclick={() => pendingDeleteIndex = null}>✗</button>
               </div>
             {:else}
-              <button class="edit-btn" on:click={() => openEditForm(i)} title="Edit">✎</button>
-              <button class="del-btn" on:click={() => pendingDeleteIndex = i} title="Delete">×</button>
+              <button class="edit-btn" onclick={() => openEditForm(i)} title="Edit">✎</button>
+              <button class="del-btn" onclick={() => pendingDeleteIndex = i} title="Delete">×</button>
             {/if}
           </div>
         </div>

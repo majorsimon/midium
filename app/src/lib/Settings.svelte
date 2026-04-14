@@ -3,21 +3,21 @@
   import { invoke } from "@tauri-apps/api/core";
   import type { AudioCapabilities, AppConfig, DeviceProfile } from "./types";
 
-  let config: AppConfig | null = null;
-  let caps: AudioCapabilities | null = null;
-  let profiles: DeviceProfile[] = [];
-  let saved = false;
-  let shortcutKey = "";
-  let shortcutEnabled = false;
-  let autostart = false;
+  let config: AppConfig | null = $state(null);
+  let caps: AudioCapabilities | null = $state(null);
+  let profiles: DeviceProfile[] = $state([]);
+  let saved = $state(false);
+  let shortcutKey = $state("");
+  let shortcutEnabled = $state(false);
+  let autostart = $state(false);
 
   // Export/import state
-  let exportContent = "";
-  let exportModalType: "mappings" | "profile" | null = null;
-  let importContent = "";
-  let importStatus = "";
-  let showImportModal = false;
-  let importModalType: "mappings" | "profile" = "mappings";
+  let exportContent = $state("");
+  let exportModalType: "mappings" | "profile" | null = $state(null);
+  let importContent = $state("");
+  let importStatus = $state("");
+  let showImportModal = $state(false);
+  let importModalType: "mappings" | "profile" = $state("mappings");
 
   onMount(async () => {
     [config, caps, profiles] = await Promise.all([
@@ -129,7 +129,7 @@
       </div>
       <div class="field-row">
         <label>Global show/hide shortcut</label>
-        <input type="checkbox" bind:checked={shortcutEnabled} on:change={updateShortcut} />
+        <input type="checkbox" bind:checked={shortcutEnabled} onchange={updateShortcut} />
       </div>
       {#if shortcutEnabled}
         <div class="field-row">
@@ -137,7 +137,7 @@
           <input
             type="text"
             bind:value={shortcutKey}
-            on:change={updateShortcut}
+            onchange={updateShortcut}
             placeholder="CmdOrCtrl+Shift+M"
             style="width: 200px; font-family: monospace; font-size: 11px;"
           />
@@ -145,7 +145,7 @@
       {/if}
       <div class="field-row">
         <label>Launch on login</label>
-        <input type="checkbox" bind:checked={autostart} on:change={toggleAutostart} />
+        <input type="checkbox" bind:checked={autostart} onchange={toggleAutostart} />
       </div>
     </div>
 
@@ -189,7 +189,7 @@
     </div>
 
     <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 24px;">
-      <button class="primary" on:click={save}>Save Settings</button>
+      <button class="primary" onclick={save}>Save Settings</button>
       {#if saved}
         <span style="color: var(--success); font-size: 12px;">✓ Saved</span>
       {/if}
@@ -201,14 +201,14 @@
     <div class="section-title">Export</div>
     <div class="field-row">
       <label>Mappings</label>
-      <button on:click={startExportMappings}>Export mappings.toml</button>
+      <button onclick={startExportMappings}>Export mappings.toml</button>
     </div>
     {#if profiles.length > 0}
       <div class="field-row" style="align-items: flex-start; flex-direction: column; gap: 6px;">
         <label>Device Profiles</label>
         <div style="display: flex; flex-wrap: wrap; gap: 6px;">
           {#each profiles.filter(p => p.controls.length > 0) as p}
-            <button on:click={() => startExportProfile(p.name)} style="font-size: 11px;">
+            <button onclick={() => startExportProfile(p.name)} style="font-size: 11px;">
               {p.name}
             </button>
           {/each}
@@ -221,29 +221,29 @@
     <div class="section-title">Import</div>
     <div class="field-row">
       <label>Mappings (TOML)</label>
-      <button on:click={() => openImport("mappings")}>Import mappings…</button>
+      <button onclick={() => openImport("mappings")}>Import mappings…</button>
     </div>
     <div class="field-row">
       <label>Device Profile (TOML)</label>
-      <button on:click={() => openImport("profile")}>Import profile…</button>
+      <button onclick={() => openImport("profile")}>Import profile…</button>
     </div>
   </div>
 
   <!-- Export modal -->
   {#if exportModalType}
-    <div class="modal-overlay" on:click|self={() => exportModalType = null}>
+    <div class="modal-overlay" onclick={(e) => { if (e.target === e.currentTarget) exportModalType = null; }}>
       <div class="modal card">
         <div class="modal-header">
           <span class="modal-title">
             {exportModalType === "mappings" ? "Export Mappings" : "Export Profile"}
           </span>
-          <button class="modal-close" on:click={() => exportModalType = null}>✕</button>
+          <button class="modal-close" onclick={() => exportModalType = null}>✕</button>
         </div>
         <textarea class="export-area" readonly value={exportContent}></textarea>
         <div class="modal-footer">
-          <button class="primary" on:click={downloadExport}>Download .toml</button>
-          <button on:click={() => navigator.clipboard.writeText(exportContent)}>Copy to clipboard</button>
-          <button on:click={() => exportModalType = null}>Close</button>
+          <button class="primary" onclick={downloadExport}>Download .toml</button>
+          <button onclick={() => navigator.clipboard.writeText(exportContent)}>Copy to clipboard</button>
+          <button onclick={() => exportModalType = null}>Close</button>
         </div>
       </div>
     </div>
@@ -251,13 +251,13 @@
 
   <!-- Import modal -->
   {#if showImportModal}
-    <div class="modal-overlay" on:click|self={() => showImportModal = false}>
+    <div class="modal-overlay" onclick={(e) => { if (e.target === e.currentTarget) showImportModal = false; }}>
       <div class="modal card">
         <div class="modal-header">
           <span class="modal-title">
             {importModalType === "mappings" ? "Import Mappings" : "Import Device Profile"}
           </span>
-          <button class="modal-close" on:click={() => showImportModal = false}>✕</button>
+          <button class="modal-close" onclick={() => showImportModal = false}>✕</button>
         </div>
         <p class="modal-hint">Paste the TOML content below, then click Import.</p>
         <textarea
@@ -272,8 +272,8 @@
           >{importStatus}</div>
         {/if}
         <div class="modal-footer">
-          <button class="primary" on:click={doImport}>Import</button>
-          <button on:click={() => showImportModal = false}>Cancel</button>
+          <button class="primary" onclick={doImport}>Import</button>
+          <button onclick={() => showImportModal = false}>Cancel</button>
         </div>
       </div>
     </div>

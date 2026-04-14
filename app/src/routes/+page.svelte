@@ -11,7 +11,7 @@
   import type { MidiEvent } from "$lib/types";
 
   type Tab = "mixer" | "groups" | "mappings" | "devices" | "plugins" | "settings";
-  let activeTab: Tab = "mixer";
+  let activeTab: Tab = $state("mixer");
 
   // When Devices tab fires open-mapping, navigate to Mappings with pre-fill.
   let mappingPrefill: {
@@ -19,15 +19,15 @@
     channel: number;
     controlTypeName: "CC" | "Note" | "PitchBend";
     controlNumber: number;
-  } | null = null;
+  } | null = $state(null);
 
-  function handleOpenMapping(e: CustomEvent<typeof mappingPrefill>) {
-    mappingPrefill = e.detail;
+  function handleOpenMapping(detail: NonNullable<typeof mappingPrefill>) {
+    mappingPrefill = detail;
     activeTab = "mappings";
   }
 
-  let connectedDevices: string[] = [];
-  let lastMidiEvent: (MidiEvent & { ts: number }) | null = null;
+  let connectedDevices: string[] = $state([]);
+  let lastMidiEvent: (MidiEvent & { ts: number }) | null = $state(null);
   let unlistens: UnlistenFn[] = [];
 
   onMount(async () => {
@@ -83,22 +83,22 @@
     </div>
 
     <nav>
-      <button class:active={activeTab === "mixer"} on:click={() => activeTab = "mixer"}>
+      <button class:active={activeTab === "mixer"} onclick={() => activeTab = "mixer"}>
         <span class="nav-icon">🎚</span> Mixer
       </button>
-      <button class:active={activeTab === "groups"} on:click={() => activeTab = "groups"}>
+      <button class:active={activeTab === "groups"} onclick={() => activeTab = "groups"}>
         <span class="nav-icon">🎛</span> Groups
       </button>
-      <button class:active={activeTab === "devices"} on:click={() => activeTab = "devices"}>
+      <button class:active={activeTab === "devices"} onclick={() => activeTab = "devices"}>
         <span class="nav-icon">🎹</span> Devices
       </button>
-      <button class:active={activeTab === "mappings"} on:click={() => activeTab = "mappings"}>
+      <button class:active={activeTab === "mappings"} onclick={() => activeTab = "mappings"}>
         <span class="nav-icon">⚡</span> Mappings
       </button>
-      <button class:active={activeTab === "plugins"} on:click={() => activeTab = "plugins"}>
+      <button class:active={activeTab === "plugins"} onclick={() => activeTab = "plugins"}>
         <span class="nav-icon">🧩</span> Plugins
       </button>
-      <button class:active={activeTab === "settings"} on:click={() => activeTab = "settings"}>
+      <button class:active={activeTab === "settings"} onclick={() => activeTab = "settings"}>
         <span class="nav-icon">⚙</span> Settings
       </button>
     </nav>
@@ -138,7 +138,7 @@
     {:else if activeTab === "devices"}
       <Devices
         {connectedDevices}
-        on:open-mapping={handleOpenMapping}
+        onOpenMapping={handleOpenMapping}
       />
     {:else if activeTab === "mappings"}
       <MappingEditor bind:prefill={mappingPrefill} />

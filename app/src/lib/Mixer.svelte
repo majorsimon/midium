@@ -26,30 +26,30 @@
   // Audio state (local reactive copies, kept in sync with stores)
   // ---------------------------------------------------------------------------
 
-  let masterVolume = 0.7;
-  let masterMuted = false;
-  let focusedVolume = 0.0;
-  let focusedMuted = false;
-  let sessions: AudioSessionInfo[] = [];
-  let devices: AudioDeviceInfo[] = [];
-  let caps: AudioCapabilities = {
+  let masterVolume = $state(0.7);
+  let masterMuted = $state(false);
+  let focusedVolume = $state(0.0);
+  let focusedMuted = $state(false);
+  let sessions: AudioSessionInfo[] = $state([]);
+  let devices: AudioDeviceInfo[] = $state([]);
+  let caps: AudioCapabilities = $state({
     per_app_volume: false,
     device_switching: false,
     input_device_switching: false,
-  };
+  });
 
   // ---------------------------------------------------------------------------
   // Mapping + profile + fader group state
   // ---------------------------------------------------------------------------
 
   let profiles: DeviceProfile[] = [];
-  let mappings: Mapping[] = [];
-  let faderGroups: FaderGroup[] = [];
+  let mappings: Mapping[] = $state([]);
+  let faderGroups: FaderGroup[] = $state([]);
 
   // Live state for fader group strips
-  let groupVolumes: number[] = [];
-  let groupMuted: boolean[] = [];
-  let groupIsDefault: boolean[] = [];
+  let groupVolumes: number[] = $state([]);
+  let groupMuted: boolean[] = $state([]);
+  let groupIsDefault: boolean[] = $state([]);
 
   // ---------------------------------------------------------------------------
   // Derived strips — one strip per SetVolume mapping (order = mapping order)
@@ -95,9 +95,9 @@
   // "Strip" type (local discriminant, mirrors what ChannelStrip props expect)
   type StripTarget = null | "master" | "focused" | { app: string } | { device: string };
 
-  $: derivedStrips = mappings
+  let derivedStrips = $derived(mappings
     .map(m => ({ mapping: m, svTargets: getSetVolumeTargets(m.action) }))
-    .filter(s => s.svTargets.length > 0);
+    .filter(s => s.svTargets.length > 0));
 
   // ---------------------------------------------------------------------------
   // Unified ordered strip list — sorted by CC/control number ascending.
@@ -117,7 +117,7 @@
     return Infinity;
   }
 
-  $: stripOrder = [
+  let stripOrder = $derived([
     ...derivedStrips.map((_, i) => ({
       kind: "mapping" as const,
       mappingIdx: i,
@@ -128,7 +128,7 @@
       groupIdx: i,
       sortKey: 10000 + g.group,
     })),
-  ].sort((a, b) => a.sortKey - b.sortKey);
+  ].sort((a, b) => a.sortKey - b.sortKey));
 
   // Primary target — used for volume-reading, mute-state, and LED lookup.
   function primaryStripTarget(svTargets: AudioTarget[]): StripTarget {
@@ -143,30 +143,30 @@
   // Reactive strip data
   // ---------------------------------------------------------------------------
 
-  $: stripVolumes = derivedStrips.map(s => {
+  let stripVolumes = $derived(derivedStrips.map(s => {
     const t = primaryStripTarget(s.svTargets);
     if (!t || isDeviceTarget(t)) return 0;
     if (t === "master") return masterVolume;
     if (t === "focused") return focusedVolume;
     return sessions.find(ss => ss.name === (t as { app: string }).app)?.volume ?? 0.8;
-  });
+  }));
 
-  $: stripMuted = derivedStrips.map(s => {
+  let stripMuted = $derived(derivedStrips.map(s => {
     const t = primaryStripTarget(s.svTargets);
     if (!t || isDeviceTarget(t)) return false;
     if (t === "master") return masterMuted;
     if (t === "focused") return focusedMuted;
     return sessions.find(ss => ss.name === (t as { app: string }).app)?.muted ?? false;
-  });
+  }));
 
-  $: stripActive = derivedStrips.map(s => {
+  let stripActive = $derived(derivedStrips.map(s => {
     const t = primaryStripTarget(s.svTargets);
     if (!t) return false;
     if (t === "master" || t === "focused") return true;
     if (isDeviceTarget(t))
       return devices.find(d => d.id === (t as { device: string }).device)?.is_default ?? false;
     return sessions.some(ss => ss.name === (t as { app: string }).app);
-  });
+  }));
 
   // ---------------------------------------------------------------------------
   // LED feedback helpers
@@ -391,7 +391,7 @@
     });
   }
 
-  $: groupLabels = faderGroups.map(g => {
+  let groupLabels = $derived(faderGroups.map(g => {
     if (g.target === "SystemMaster") return "Master";
     if (g.target === "FocusedApplication") return "Focused";
     if (typeof g.target === "object" && "Application" in g.target) return g.target.Application.name;
@@ -399,7 +399,7 @@
       return devices.find(d => d.id === (g.target as { Device: { id: string } }).Device.id)?.name
         ?? (g.target as { Device: { id: string } }).Device.id;
     return "?";
-  });
+  }));
 
   onMount(async () => {
     await initStoreListeners();
@@ -490,9 +490,9 @@
             showFader={!isDeviceTarget(pt)}
             showS={false}
             rClickable={isDeviceTarget(pt)}
-            on:volume-change={(e) => handleVolumeChange(s.mappingIdx, e.detail)}
-            on:mute-toggle={() => handleMuteToggle(s.mappingIdx)}
-            on:r-click={() => handleRClick(s.mappingIdx)}
+            onVolumeChange={(v) => handleVolumeChange(s.mappingIdx, v)}
+            onMuteToggle={() => handleMuteToggle(s.mappingIdx)}
+            onRClick={() => handleRClick(s.mappingIdx)}
           />
         {:else}
           {@const g = faderGroups[s.groupIdx]}
@@ -509,9 +509,9 @@
             showFader={true}
             showS={false}
             rClickable={isDevice}
-            on:volume-change={(e) => handleGroupVolumeChange(s.groupIdx, e.detail)}
-            on:mute-toggle={() => handleGroupMuteToggle(s.groupIdx)}
-            on:r-click={() => handleGroupRClick(s.groupIdx)}
+            onVolumeChange={(v) => handleGroupVolumeChange(s.groupIdx, v)}
+            onMuteToggle={() => handleGroupMuteToggle(s.groupIdx)}
+            onRClick={() => handleGroupRClick(s.groupIdx)}
           />
         {/if}
       {/each}
@@ -523,7 +523,7 @@
     <div class="card device-row">
       <span class="device-label">Output</span>
       <select value={devices.find(d => !d.is_input && d.is_default)?.id ?? ""}
-              on:change={(e) => setDefaultOutput(e.currentTarget.value)}>
+              onchange={(e) => setDefaultOutput(e.currentTarget.value)}>
         {#each devices.filter(d => !d.is_input) as dev}
           <option value={dev.id}>{dev.name}</option>
         {/each}
@@ -536,7 +536,7 @@
     <div class="card device-row">
       <span class="device-label">Input</span>
       <select value={devices.find(d => d.is_input && d.is_default)?.id ?? ""}
-              on:change={(e) => setDefaultInput(e.currentTarget.value)}>
+              onchange={(e) => setDefaultInput(e.currentTarget.value)}>
         {#each devices.filter(d => d.is_input) as dev}
           <option value={dev.id}>{dev.name}</option>
         {/each}
