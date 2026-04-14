@@ -17,22 +17,20 @@ use windows::Win32::System::Com::{
 // IID:   {F8679F50-850A-41CF-9C72-430F290290C8}
 // ---------------------------------------------------------------------------
 
-#[allow(non_snake_case)]
 #[windows::core::interface("F8679F50-850A-41CF-9C72-430F290290C8")]
 unsafe trait IPolicyConfig: windows::core::IUnknown {
-    // Stub methods that precede SetDefaultEndpoint in the vtable.
-    fn GetMixFormat(&self, device: PCWSTR, format: *mut *mut u8) -> windows::core::HRESULT;
-    fn GetDeviceFormat(&self, device: PCWSTR, default: i32, format: *mut *mut u8) -> windows::core::HRESULT;
-    fn ResetDeviceFormat(&self, device: PCWSTR) -> windows::core::HRESULT;
-    fn SetDeviceFormat(&self, device: PCWSTR, endpoint_fmt: *mut u8, mix_fmt: *mut u8) -> windows::core::HRESULT;
-    fn GetProcessingPeriod(&self, device: PCWSTR, default: i32, default_period: *mut i64, min_period: *mut i64) -> windows::core::HRESULT;
-    fn SetProcessingPeriod(&self, device: PCWSTR, period: *mut i64) -> windows::core::HRESULT;
-    fn GetShareMode(&self, device: PCWSTR, mode: *mut u32) -> windows::core::HRESULT;
-    fn SetShareMode(&self, device: PCWSTR, mode: u32) -> windows::core::HRESULT;
-    fn GetPropertyValue(&self, device: PCWSTR, fx_store: i32, key: *const u32, value: *mut u8) -> windows::core::HRESULT;
-    fn SetPropertyValue(&self, device: PCWSTR, fx_store: i32, key: *const u32, value: *mut u8) -> windows::core::HRESULT;
-    fn SetDefaultEndpoint(&self, device: PCWSTR, role: ERole) -> windows::core::HRESULT;
-    fn SetEndpointVisibility(&self, device: PCWSTR, visible: i32) -> windows::core::HRESULT;
+    fn get_mix_format(&self, device: PCWSTR, format: *mut *mut u8) -> windows::core::HRESULT;
+    fn get_device_format(&self, device: PCWSTR, default: i32, format: *mut *mut u8) -> windows::core::HRESULT;
+    fn reset_device_format(&self, device: PCWSTR) -> windows::core::HRESULT;
+    fn set_device_format(&self, device: PCWSTR, endpoint_fmt: *mut u8, mix_fmt: *mut u8) -> windows::core::HRESULT;
+    fn get_processing_period(&self, device: PCWSTR, default: i32, default_period: *mut i64, min_period: *mut i64) -> windows::core::HRESULT;
+    fn set_processing_period(&self, device: PCWSTR, period: *mut i64) -> windows::core::HRESULT;
+    fn get_share_mode(&self, device: PCWSTR, mode: *mut u32) -> windows::core::HRESULT;
+    fn set_share_mode(&self, device: PCWSTR, mode: u32) -> windows::core::HRESULT;
+    fn get_property_value(&self, device: PCWSTR, fx_store: i32, key: *const u32, value: *mut u8) -> windows::core::HRESULT;
+    fn set_property_value(&self, device: PCWSTR, fx_store: i32, key: *const u32, value: *mut u8) -> windows::core::HRESULT;
+    fn set_default_endpoint_role(&self, device: PCWSTR, role: ERole) -> windows::core::HRESULT;
+    fn set_endpoint_visibility(&self, device: PCWSTR, visible: i32) -> windows::core::HRESULT;
 }
 
 const CLSID_POLICY_CONFIG_CLIENT: windows::core::GUID =
@@ -423,7 +421,7 @@ fn set_default_endpoint(device_id: &str) -> anyhow::Result<()> {
 
         for role in [eConsole, eMultimedia, eCommunications] {
             policy
-                .SetDefaultEndpoint(PCWSTR(id_wide.as_ptr()), role)
+                .set_default_endpoint_role(PCWSTR(id_wide.as_ptr()), role)
                 .ok()
                 .map_err(|e| anyhow::anyhow!("SetDefaultEndpoint: {e}"))?;
         }
