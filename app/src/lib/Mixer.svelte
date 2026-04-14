@@ -286,6 +286,12 @@
     devices = await invoke<AudioDeviceInfo[]>("list_output_devices").catch(() => devices);
   }
 
+  async function setDefaultInput(id: string) {
+    await invoke("set_default_input", { deviceId: id }).catch(console.error);
+    const inputs = await invoke<AudioDeviceInfo[]>("list_input_devices").catch(() => []);
+    devices = [...devices.filter(d => !d.is_input), ...inputs];
+  }
+
   // ---------------------------------------------------------------------------
   // Fader group strip handlers
   // ---------------------------------------------------------------------------
@@ -320,7 +326,11 @@
   async function loadState() {
     try {
       caps     = await invoke("get_capabilities");
-      devices  = await invoke("list_output_devices");
+      const outputs: AudioDeviceInfo[] = await invoke("list_output_devices");
+      const inputs: AudioDeviceInfo[] = caps.input_device_switching
+        ? await invoke<AudioDeviceInfo[]>("list_input_devices").catch(() => [])
+        : [];
+      devices = [...outputs, ...inputs];
       [masterVolume, masterMuted] = await Promise.all([
         invoke<number>("get_volume", { target: "SystemMaster" }),
         invoke<boolean>("get_muted", { target: "SystemMaster" }).catch(() => false),
@@ -471,9 +481,21 @@
     </div>
   {/if}
 
+  <!-- Input device selector -->
+  {#if caps.input_device_switching && devices.filter(d => d.is_input).length > 0}
+    <div class="card device-row">
+      <span class="device-label">Input</span>
+      <select on:change={(e) => setDefaultInput(e.currentTarget.value)}>
+        {#each devices.filter(d => d.is_input) as dev}
+          <option value={dev.id} selected={dev.is_default}>{dev.name}</option>
+        {/each}
+      </select>
+    </div>
+  {/if}
+
   {#if !caps.per_app_volume}
     <div class="platform-note">
-      Per-app volume requires the macOS Audio Tap API (14.2+) — coming soon.
+      Per-app volume requires macOS 14.2+ (Audio Tap API).
       Master volume and device-level control are fully functional.
     </div>
   {/if}

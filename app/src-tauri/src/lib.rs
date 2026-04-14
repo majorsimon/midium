@@ -138,6 +138,14 @@ fn set_default_output(state: State<AppState>, device_id: String) -> Result<(), S
 }
 
 #[tauri::command]
+fn set_default_input(state: State<AppState>, device_id: String) -> Result<(), String> {
+    state
+        .audio
+        .set_default_input(&device_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn list_midi_ports() -> Vec<String> {
     MidiManager::list_ports()
 }
@@ -523,6 +531,7 @@ pub fn run() {
             set_volume,
             toggle_mute,
             set_default_output,
+            set_default_input,
             list_midi_ports,
             get_mappings,
             save_mapping,
