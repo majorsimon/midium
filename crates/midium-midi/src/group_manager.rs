@@ -83,7 +83,11 @@ impl GroupManager {
     }
 
     fn handle_midi(&mut self, event: &MidiEvent) {
-        for group in &mut self.groups {
+        // Whether to sync all LEDs for the event device after the loop
+        // (used by R-button so sibling groups' R LEDs turn off).
+        let mut sync_after = false;
+
+        'groups: for group in &mut self.groups {
             if !device_matches(&event.device, &group.device_pattern) {
                 continue;
             }
@@ -137,14 +141,18 @@ impl GroupManager {
                         if let Err(e) = self.audio.set_default_output(id) {
                             warn!("GroupManager set_default_output: {e}");
                         } else {
-                            // R is now on (device is default); keep M/S as they are.
-                            let muted = self.audio.is_muted(&group.target).unwrap_or(false);
-                            send_group_leds(&self.event_bus, group, muted, &event.device);
+                            sync_after = true;
                         }
                     }
-                    return;
+                    break 'groups;
                 }
             }
+        }
+
+        // Sync all group LEDs on this device so the old default's R LED
+        // turns off and the new default's turns on.
+        if sync_after {
+            self.sync_leds(&event.device);
         }
     }
 
