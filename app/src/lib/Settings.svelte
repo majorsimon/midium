@@ -11,6 +11,7 @@
   let saved = false;
   let shortcutKey = "";
   let shortcutEnabled = false;
+  let autostart = false;
 
   // Export/import state
   let exportContent = "";
@@ -29,6 +30,10 @@
     const currentShortcut = await invoke<string | null>("get_shortcut").catch(() => null);
     shortcutKey = currentShortcut ?? "CmdOrCtrl+Shift+M";
     shortcutEnabled = currentShortcut !== null;
+    autostart = await invoke<boolean>("get_autostart").catch(() => false);
+    if (config) {
+      config.general.autostart = autostart;
+    }
   });
 
   async function updateShortcut() {
@@ -40,6 +45,18 @@
       }
     } catch (e) {
       console.error("Failed to set shortcut:", e);
+    }
+  }
+
+  async function toggleAutostart() {
+    try {
+      await invoke("set_autostart", { enabled: autostart });
+      if (config) {
+        config.general.autostart = autostart;
+        await invoke("save_config", { config });
+      }
+    } catch (e) {
+      console.error(e);
     }
   }
 
@@ -128,6 +145,10 @@
           />
         </div>
       {/if}
+      <div class="field-row">
+        <label>Launch on login</label>
+        <input type="checkbox" bind:checked={autostart} on:change={toggleAutostart} />
+      </div>
     </div>
 
     <!-- MIDI -->
