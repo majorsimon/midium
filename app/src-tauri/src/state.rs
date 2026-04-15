@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{oneshot, Mutex, RwLock};
 
 use midium_audio::backend::AudioBackend;
 use midium_core::{
@@ -8,9 +8,8 @@ use midium_core::{
     dispatch::ActionDispatcher,
     event_bus::EventBus,
     mapping::MappingEngine,
-    types::MidiEvent,
+    types::{DeviceProfile, MidiEvent},
 };
-use midium_midi::DeviceProfile;
 use midium_plugins::PluginInfo;
 
 pub struct AppState {
@@ -23,5 +22,5 @@ pub struct AppState {
     pub current_shortcut: Arc<Mutex<Option<String>>>,
     pub midi_learn_tx: Arc<Mutex<Option<oneshot::Sender<MidiEvent>>>>,
     pub plugin_list: Arc<Mutex<Vec<PluginInfo>>>,
-    pub profiles: Arc<Vec<DeviceProfile>>,
+    pub profiles: Arc<RwLock<Vec<DeviceProfile>>>,
 }

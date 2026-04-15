@@ -13,7 +13,7 @@ use midium_core::mapping::MappingEngine;
 use midium_core::types::AppEvent;
 use midium_midi::manager::MidiManager;
 use midium_midi::profile::load_profiles;
-use midium_midi::GroupManager;
+use midium_midi::{GroupManager, ProfileWatcher};
 
 /// Headless MIDI mixer daemon — maps MIDI controllers to system audio.
 #[derive(Parser)]
@@ -189,6 +189,7 @@ fn main() -> anyhow::Result<()> {
             all_profiles,
             fader_groups,
             config.midi.poll_interval_secs,
+            profiles_search,
         ))
 }
 
@@ -199,6 +200,7 @@ async fn async_main(
     profiles: Vec<midium_midi::profile::DeviceProfile>,
     fader_groups: Vec<midium_core::types::FaderGroup>,
     midi_poll_interval_secs: u64,
+    profile_dirs: Vec<PathBuf>,
 ) -> anyhow::Result<()> {
     // Wrap in Arc so it can be shared between dispatcher and GroupManager.
     let audio_arc: Arc<dyn AudioBackend> = Arc::from(audio_backend);
@@ -219,6 +221,12 @@ async fn async_main(
     );
     tokio::spawn(async move {
         group_manager.run().await;
+    });
+
+    // Spawn profile watcher
+    let watcher = ProfileWatcher::new(event_bus.clone(), profile_dirs);
+    tokio::spawn(async move {
+        watcher.run().await;
     });
 
     // Spawn MIDI manager

@@ -6,10 +6,10 @@
 
 Midium is a cross-platform desktop application that maps MIDI controller inputs (faders, knobs, buttons, encoders) to system audio controls: volume, mute, device switching, and per-app volume. It ships in two forms:
 
-- A **Tauri 2 GUI application** with a Svelte 4 frontend
+- A **Tauri 2 GUI application** with a Svelte 5 frontend (runes syntax)
 - A **headless CLI daemon** (`midium` binary) for scripted or server use
 
-The backend is written in Rust; the frontend is TypeScript/Svelte compiled to a static bundle consumed by Tauri.
+The backend is written in Rust; the frontend is TypeScript/Svelte 5 compiled to a static bundle consumed by Tauri via Vite 6.
 
 ---
 
@@ -28,7 +28,7 @@ The backend is written in Rust; the frontend is TypeScript/Svelte compiled to a 
 │  lib.rs (setup orchestration + event bridge)                │
 │  state.rs (AppState with tokio::sync::Mutex fields)        │
 │  tray.rs (tray icon + menu)                                 │
-│  commands/ (30 async IPC handlers across 7 modules)         │
+│  commands/ (35 async IPC handlers across 8 modules)         │
 └───┬───────────────────────────────────────────────────────┬─┘
     │                                                       │
 ┌───▼──────────────┐   ┌──────────────────────────────────┐ │
@@ -61,15 +61,16 @@ All runtime communication between Rust components flows through a single `**Even
 Cargo.toml                       workspace root
 crates/
   midium-core/                   shared kernel
-    src/types.rs                 domain types (incl. MidiMessage::raw_value())
+    src/types.rs                 domain types (DeviceProfile, MidiMessage, AppEvent, etc.)
     src/event_bus.rs             broadcast channel wrapper (capacity 2048)
     src/mapping.rs               MIDI → Action resolver
     src/dispatch.rs              Action → subsystem router
-    src/config.rs                TOML config + persistence
+    src/config.rs                TOML config + persistence + PresetMeta
   midium-midi/
     src/parse.rs                 raw bytes → MidiEvent
     src/manager.rs               device discovery + connection
-    src/profile.rs               device profile system
+    src/profile.rs               profile loading + matching (types re-exported from core)
+    src/profile_watcher.rs       filesystem watcher for hot-reload (notify crate)
     src/group_manager.rs         fader group LED feedback
   midium-audio/
     src/backend.rs               AudioBackend trait (+ register_event_bus)
@@ -87,7 +88,7 @@ crates/
     src/main.rs                  headless CLI entry point (clap + tracing-appender)
 app/
   src-tauri/src/
-    lib.rs                       setup orchestration + event bridge (~290 lines)
+    lib.rs                       setup orchestration + event bridge
     state.rs                     AppState struct definition
     tray.rs                      tray icon + menu construction
     commands/
@@ -97,11 +98,14 @@ app/
       config.rs                  config + shortcut + autostart IPC handlers
       mappings.rs                mapping CRUD + import/export IPC handlers
       fader_groups.rs            fader group CRUD IPC handlers
-      profiles.rs                profile list + import/export IPC handlers
+      profiles.rs                profile CRUD + meta + import/export IPC handlers
+      presets.rs                 mapping preset CRUD IPC handlers
       plugins.rs                 plugin list IPC handler
     main.rs                      Tauri entry point (1 line)
   src/routes/+page.svelte        tab shell + event listeners
   src/lib/                       Svelte components
+  src/lib/PresetSelector.svelte  mapping preset save/load/delete UI
+  src/lib/ProfileEditor.svelte   visual profile editor (list + edit form)
   src/lib/types.ts               TypeScript mirror of Rust types (incl. AppConfig)
   src/lib/types.test.ts          vitest unit tests for types.ts
   src/lib/stores.ts              Svelte writable stores for push-based state
@@ -129,9 +133,10 @@ Defines all domain types:
 | `Action`                                                     | 11 variants: `SetVolume`, `ToggleMute`, `SetDefaultOutput`, `SetDefaultInput`, `CycleOutputDevices`, `CycleInputDevices`, `MediaPlayPause`, `MediaNext`, `MediaPrev`, `RunPluginAction`, `SendKeyboardShortcut`, `SendMidiMessage`, `ActionGroup` |
 | `AudioTarget`                                                | `SystemMaster` / `Device { id }` / `Application { name }` / `FocusedApplication`                                                                                                                                                                  |
 | `ValueTransform`                                             | `Linear` / `Logarithmic` / `RelativeEncoder { sensitivity }` / `Toggle` / `Momentary`                                                                                                                                                             |
+| `DeviceProfile` / `ProfileControl`                           | Device profile types (physical controller layout). Moved from `midium-midi` to avoid circular deps with `AppEvent`.                                                                                                                               |
 | `FaderGroup`                                                 | Links a profile channel strip to an audio target                                                                                                                                                                                                  |
 | `Mapping`                                                    | A persisted mapping: `ControlId` + `Action` + `ValueTransform`                                                                                                                                                                                    |
-| `AppEvent`                                                   | 10 variants on the event bus (see §5)                                                                                                                                                                                                             |
+| `AppEvent`                                                   | 11 variants on the event bus (see §5), including `ProfilesReloaded`                                                                                                                                                                               |
 | `AudioDeviceInfo` / `AudioSessionInfo` / `AudioCapabilities` | Audio introspection                                                                                                                                                                                                                               |
 
 
@@ -249,9 +254,13 @@ group = 1
 section = "Buttons"
 ```
 
-Five profiles are compiled into the binary via `include_str!` (`bundled_profiles()`). The filesystem loader (`load_profiles(dir)`) overlays these at runtime — a filesystem profile with the same `name` replaces the bundled one.
+Five profiles are compiled into the binary via `include_str!` (`bundled_profiles()`). The filesystem loader (`load_profiles(dir)`) overlays these at runtime — a filesystem profile with the same `name` replaces the bundled one. `merge_profiles(bundled, dirs)` combines both sources in a single call.
 
 `match_profile(port_name, profiles)` does a case-insensitive substring search across all `match_patterns`.
+
+#### `profile_watcher.rs` — Hot-Reload
+
+`ProfileWatcher` uses the `notify` crate (v7) to watch all profile directories for `.toml` file changes. On `Create`/`Modify`/`Remove` events (debounced at 500ms), it re-runs `merge_profiles(bundled_profiles(), dirs)` and publishes `AppEvent::ProfilesReloaded` to the event bus. Both `MidiManager` and `GroupManager` swap their internal profile lists on receipt. The Tauri event bridge updates `AppState.profiles` (an `Arc<RwLock<Vec<DeviceProfile>>>`) and emits `"profiles-changed"` to the frontend, which refreshes the profile list in the Settings UI. Imported profiles are picked up automatically by the watcher — no restart required.
 
 #### `group_manager.rs`
 
@@ -388,7 +397,7 @@ The Tauri application is split across multiple modules (~870 lines total):
 | `commands/config.rs`       | ~82   | Config + shortcut + autostart IPC handlers             |
 | `commands/mappings.rs`     | ~90   | Mapping CRUD + import/export (with 1MB size limit)     |
 | `commands/fader_groups.rs` | ~56   | Fader group CRUD (sorted insert)                       |
-| `commands/profiles.rs`     | ~56   | Profile list + import/export (re-serialises on import) |
+| `commands/profiles.rs`     | ~180  | Profile CRUD, meta, duplicate, import/export (with validation) |
 | `commands/plugins.rs`      | ~10   | Plugin list                                            |
 
 
@@ -405,13 +414,13 @@ pub struct AppState {
     pub current_shortcut: Arc<tokio::sync::Mutex<Option<String>>>,
     pub midi_learn_tx: Arc<tokio::sync::Mutex<Option<oneshot::Sender<MidiEvent>>>>,
     pub plugin_list: Arc<tokio::sync::Mutex<Vec<PluginInfo>>>,
-    pub profiles: Arc<Vec<DeviceProfile>>,
+    pub profiles: Arc<RwLock<Vec<DeviceProfile>>>,
 }
 ```
 
 All mutex-guarded fields use `tokio::sync::Mutex` to avoid blocking tokio worker threads. All IPC handlers that access these fields are `async fn` and use `.lock().await`.
 
-**IPC commands** (30 total):
+**IPC commands** (35 total):
 
 
 | Category      | Commands                                                                                                    |
@@ -421,7 +430,8 @@ All mutex-guarded fields use `tokio::sync::Mutex` to avoid blocking tokio worker
 | MIDI          | `list_midi_ports`, `send_midi`, `start_midi_learn`, `cancel_midi_learn`                                     |
 | Mappings      | `get_mappings`, `save_mapping`, `delete_mapping`, `export_mappings`, `import_mappings`                      |
 | Fader groups  | `get_fader_groups`, `save_fader_group`, `delete_fader_group`                                                |
-| Profiles      | `list_profiles`, `export_profile`, `import_profile`                                                         |
+| Presets       | `list_presets`, `save_preset`, `load_preset`, `delete_preset`, `rename_preset`, `get_active_preset`         |
+| Profiles      | `list_profiles`, `list_profile_meta`, `get_profile`, `save_profile`, `delete_profile`, `duplicate_profile`, `export_profile`, `import_profile` |
 | Config        | `get_config`, `save_config`, `get_shortcut`, `set_shortcut`, `get_autostart`, `set_autostart`               |
 | Plugins       | `list_plugins`                                                                                              |
 
@@ -436,14 +446,15 @@ All mutex-guarded fields use `tokio::sync::Mutex` to avoid blocking tokio worker
 6. Build `ActionDispatcher` with `SharedAudio` (bridges `Arc<dyn AudioBackend>` to `Box<dyn VolumeControl>`)
 7. Create `MappingEngine`, load mappings
 8. Spawn plugin system on dedicated OS thread
-9. Register `AppState` with Tauri
+9. Register `AppState` with Tauri (profiles stored in `Arc<RwLock<Vec<DeviceProfile>>>`)
 10. Register global shortcut if configured
 11. Set autostart via `tauri-plugin-autostart`
 12. Build tray icon
 13. Install close-to-tray window event handler
 14. Spawn `MidiManager` async task
 15. Spawn `GroupManager` async task
-16. Spawn EventBus-to-Tauri emit bridge async task
+16. Spawn `ProfileWatcher` async task (watches profile directories via `notify` crate)
+17. Spawn EventBus-to-Tauri emit bridge async task
 
 **EventBus→Tauri bridge** (the central processing loop in `lib.rs`):
 
@@ -458,6 +469,8 @@ AppEvent::DeviceConnected     → emit("device-connected")
 AppEvent::DeviceDisconnected  → emit("device-disconnected")
 AppEvent::DefaultDeviceChanged → emit("default-device-changed")
                                → rebuild + set tray menu (auto-refresh)
+AppEvent::ProfilesReloaded    → update AppState.profiles RwLock
+                               → emit("profiles-changed")
 AppEvent::Shutdown / Err      → break
 ```
 
@@ -498,7 +511,8 @@ All inter-component communication uses `AppEvent` variants on the shared broadca
 | `DeviceDisconnected { device }`     | `MidiManager`                                        | EventBus bridge                                                                            |
 | `SendMidi { device, data }`         | `ActionDispatcher`, `GroupManager`, frontend via IPC | `MidiManager` SendMidi drain task                                                          |
 | `DefaultDeviceChanged`              | `ActionDispatcher`, `CoreAudioBackend` (via listener) | EventBus bridge (→ tray rebuild), `GroupManager` (→ LED sync)                             |
-| `GroupsChanged { groups }`          | IPC `save_fader_group` / `delete_fader_group`        | `GroupManager` (hot-reloads group config)                                                  |
+| `GroupsChanged { groups }`          | IPC `save_fader_group` / `delete_fader_group` / `load_preset` | `GroupManager` (hot-reloads group config)                                            |
+| `ProfilesReloaded { profiles }`    | `ProfileWatcher`                                     | `MidiManager` (swap profiles), `GroupManager` (swap profiles), EventBus bridge (→ AppState + frontend `profiles-changed`) |
 | `Shutdown`                          | Signal handler                                       | All subscribers (break their loops)                                                        |
 
 
@@ -546,11 +560,11 @@ EventBus.publish(AppEvent::Midi(event))
 
 ### 7.1 Routing and Layout
 
-SvelteKit with `adapter-static`. Single route (`/`). `prerender = true`, `ssr = false`. The layout is minimal — just imports `app.css`. All navigation is client-side state in `+page.svelte`:
+SvelteKit 2 with `adapter-static` and Vite 6. Single route (`/`). `prerender = true`, `ssr = false`. The layout uses `$props()` to receive a `children` snippet (Svelte 5 pattern replacing `<slot />`). All navigation is client-side state in `+page.svelte`:
 
 ```svelte
 let activeTab: Tab = "mixer";
-// Tab = "mixer" | "groups" | "mappings" | "devices" | "plugins" | "settings"
+// Tab = "mixer" | "groups" | "mappings" | "devices" | "profiles" | "plugins" | "settings"
 ```
 
 ### 7.2 Component Responsibilities
@@ -558,19 +572,21 @@ let activeTab: Tab = "mixer";
 
 | Component                 | State ownership                                     | Key behaviour                                                                            |
 | ------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `+page.svelte`            | `activeTab`, `connectedDevices`, `lastMidiEvent`    | Global MIDI device event listeners; tab routing; `open-mapping` cross-tab navigation     |
-| `Mixer.svelte`            | Subscribes to Svelte stores; local group state      | Push-based via stores; 30s fallback poll; LED sync; channel strips                       |
-| `ChannelStrip.svelte`     | `localVol`, `dragging`                              | Vertical range fader; S/M/R buttons; drag-to-prevent-external-update pattern             |
-| `MappingEditor.svelte`    | `mappings`, form state, learn state                 | MIDI Learn via oneshot; two-panel add form; inline delete confirmation                   |
-| `FaderGroupEditor.svelte` | `faderGroups`, form state                           | Profile-aware group picker; device auto-detect via MIDI Learn                            |
-| `Devices.svelte`          | `profiles`, `selectedDevice`, `lastValues`          | Real-time CC value display; click control → `open-mapping` event                         |
-| `Settings.svelte`         | `config: AppConfig \| null`, shortcut state, modals | Typed config; TOML export (textarea + download); paste-to-import                         |
+| `+page.svelte`            | `activeTab`, `connectedDevices`, `lastMidiEvent`    | Global MIDI device event listeners; tab routing; `onOpenMapping` callback for cross-tab navigation |
+| `Mixer.svelte`            | Subscribes to Svelte stores; local group state      | Push-based via stores; 30s fallback poll; LED sync; channel strips with callback props   |
+| `ChannelStrip.svelte`     | `$state(localVol)`, `$state(dragging)`              | Vertical range fader; S/M/R buttons; drag-to-prevent-external-update via `$effect()`; callback props (`onVolumeChange`, `onMuteToggle`, `onAssignClick`, `onRClick`) |
+| `MappingEditor.svelte`    | `mappings`, form state, learn state                 | MIDI Learn via oneshot; two-panel add form; `$bindable()` prefill prop; `$effect()` reactive blocks |
+| `FaderGroupEditor.svelte` | `faderGroups`, form state                           | Profile-aware group picker; device auto-detect via MIDI Learn; `$effect()` reactive blocks |
+| `Devices.svelte`          | `profiles`, `selectedDevice`, `lastValues`          | Real-time CC value display; click control → `onOpenMapping` callback prop                |
+| `PresetSelector.svelte`   | `presets`, `activePreset`, save modal state          | Save/load/delete mapping presets; refreshes MappingEditor and FaderGroupEditor via `preset-loaded` event |
+| `ProfileEditor.svelte`    | `profiles`, `meta`, edit form state, modals         | Visual profile editor: list all profiles with user/bundled badges; create, edit, duplicate, delete profiles; inline control table editor; leverages `ProfileWatcher` for live refresh via `profiles-changed` event |
+| `Settings.svelte`         | `config: AppConfig \| null`, shortcut state, modals | Typed config; TOML export (textarea + download); paste-to-import; explicit `onclick` event delegation; auto-refreshes profiles via `profiles-changed` listener |
 | `PluginManager.svelte`    | `plugins` (read-only list)                          | Display-only; plugin management via `config.toml`                                        |
 
 
 ### 7.3 Cross-Tab Communication
 
-The only cross-tab data flow is from `Devices` → `MappingEditor`. When the user clicks a control in the Devices schematic, `Devices.svelte` dispatches a `"open-mapping"` custom event. `+page.svelte` handles it, sets `mappingPrefill`, and switches `activeTab` to `"mappings"`. `MappingEditor` reacts to the `bind:prefill` prop change in a `$:` reactive block.
+The only cross-tab data flow is from `Devices` → `MappingEditor`. When the user clicks a control in the Devices schematic, `Devices.svelte` invokes its `onOpenMapping` callback prop. `+page.svelte` handles it, sets `mappingPrefill`, and switches `activeTab` to `"mappings"`. `MappingEditor` reacts to the `$bindable()` prefill prop change in a `$effect()` block.
 
 ### 7.4 State Update Patterns
 
@@ -579,9 +595,11 @@ The frontend uses three mechanisms to stay current:
 1. **Initial load on mount** — each component calls relevant `invoke()` commands in `onMount()`
 2. **Push-based Svelte stores** — `stores.ts` exports `writable` stores for `masterVolume`, `masterMuted`, `focusedVolume`, `focusedMuted`, and `sessions`. `initStoreListeners()` subscribes to Tauri `volume-changed` and `mute-changed` events (pushed by the CoreAudio property listeners) and updates the stores reactively. Components subscribe to stores via `$masterVolume` etc.
 3. **30-second fallback polling** — `Mixer.svelte` runs a reduced-frequency poll as a safety net for any events missed by the push path (e.g., focused app changes)
-4. **Event listeners** — `listen()` on `midi-event`, `device-connected`, `device-disconnected`, `volume-changed`, `mute-changed`, `default-device-changed`, `midi-learn-result`. Listeners are properly cleaned up via `onDestroy` with stored `UnlistenFn` references.
+4. **Event listeners** — `listen()` on `midi-event`, `device-connected`, `device-disconnected`, `volume-changed`, `mute-changed`, `default-device-changed`, `midi-learn-result`, `profiles-changed`, `preset-loaded`. Listeners are properly cleaned up via `onDestroy` with stored `UnlistenFn` references.
 
-The `ChannelStrip` component uses a `dragging` flag to decouple the slider from parent prop updates during user interaction, preventing fights between user input and store updates.
+The `ChannelStrip` component uses a `$state(dragging)` flag to decouple the slider from parent prop updates during user interaction, preventing fights between user input and store updates. A `$effect()` block syncs the local volume state from the parent prop only when the user is not dragging.
+
+All components use Svelte 5 runes: `$props()` for inputs (with `$bindable()` where two-way binding is needed), `$state()` for local reactive state, `$derived()` for computed values, and `$effect()` for side effects replacing the older `$:` reactive declarations.
 
 ### 7.5 CSS Architecture
 
@@ -643,7 +661,17 @@ transform = "Logarithmic"
 
 `persist_mappings()` writes atomically: creates the directory if needed, serialises the full `MappingsConfig` (mappings + fader groups), writes to the same file. There is no atomic rename — a write failure could leave the file partially written.
 
-### 8.3 Device Profiles
+### 8.3 Mapping Presets
+
+Presets are saved as individual TOML files under `config_dir()/presets/`, each containing a complete `MappingsConfig` (both mappings and fader groups). A `presets.toml` meta-file tracks the active preset name:
+
+```toml
+active_preset = "my-setup"
+```
+
+The live `mappings.toml` always holds the current working set, preserving backward compatibility. Loading a preset replaces the in-memory `MappingsConfig`, reloads the `MappingEngine`, publishes `GroupsChanged` to the `GroupManager`, and persists to `mappings.toml`. The frontend `PresetSelector` component (shown above the Mappings tab) provides save/load/delete actions. A `"preset-loaded"` Tauri event triggers both `MappingEditor` and `FaderGroupEditor` to re-fetch their data.
+
+### 8.4 Device Profiles
 
 ```toml
 name = "Korg nanoKONTROL2"
@@ -670,6 +698,8 @@ Bundled profiles (compiled into binary): `korg_nanokontrol2`, `behringer_xtouch_
 
 ## 9. CI/CD
 
+All CI workflows use Node.js 24, `actions/checkout@v5`, `actions/setup-node@v5`, `actions/cache@v5`, `actions/upload-artifact@v6`, and `actions/download-artifact@v7`.
+
 ### Test Workflow (`.github/workflows/test.yml`)
 
 Runs on push/PR to `main`/`master` across a 3-platform matrix (ubuntu, macos, windows):
@@ -677,10 +707,11 @@ Runs on push/PR to `main`/`master` across a 3-platform matrix (ubuntu, macos, wi
 1. `cargo clippy --all-targets -- -D warnings`
 2. `cargo test --workspace`
 3. `npx svelte-check`
+4. `npm test` (vitest)
 
 Audio tests in `crates/midium-audio/tests/audio_tests.rs` skip gracefully when no audio daemon is available (`backend_or_skip!` macro). Hardware-dependent tests are marked `#[ignore]` and must be run manually.
 
-Frontend unit tests use `vitest` (`npm test` / `vitest run`). Currently covers `types.ts` pure functions (`controlLabel`, `actionLabel`, `targetLabel`) with 15 test cases.
+Frontend unit tests use `vitest` v3.x (`npm test` / `vitest run`). Currently covers `types.ts` pure functions (`controlLabel`, `actionLabel`, `targetLabel`) with 15 test cases.
 
 ### PR Build Workflow (`.github/workflows/pr-build.yml`)
 
@@ -700,7 +731,8 @@ Builds the daemon binary and verifies `--help` exits cleanly.
 
 - `**Mapping` equality** uses `ControlId` as the key. `ControlId` derives `PartialEq + Eq + Hash`. Two mappings with the same control are considered duplicates; saving one overwrites the other.
 - **The `send_midi` IPC command** publishes `AppEvent::SendMidi` to the event bus rather than calling the MIDI manager directly. The MIDI manager's drain task picks it up. This means there is a small latency (one async task scheduling cycle) for LED feedback triggered from the UI.
-- **Profile import** re-serialises the validated `DeviceProfile` struct before writing to disk (rather than writing raw user input), ensuring files on disk are canonical TOML. Imports are size-limited to 1MB. Profile import does not reload profiles at runtime — the import note says "Restart to apply." This is because `AppState.profiles` is `Arc<Vec<DeviceProfile>>` (immutable after setup) rather than `Arc<Mutex<Vec<…>>>`.
+- **Profile import** re-serialises the validated `DeviceProfile` struct before writing to disk (rather than writing raw user input), ensuring files on disk are canonical TOML. Imports are size-limited to 1MB. The `ProfileWatcher` detects the new file and publishes `ProfilesReloaded`, so the imported profile is available immediately without restart.
+- **Profile editor** saves all profiles to `config_dir()/profiles/`, including edits to bundled profiles (which creates a user override). The `ProfileWatcher` handles reload automatically, so `save_profile` does not need to update `AppState.profiles` manually. `list_profile_meta` scans the user profiles directory to determine which profiles have disk files (deletable/editable) vs bundled-only (read-only, edit creates override). `validate_profile` checks name non-empty, channel 0-15, number 0-127, min <= max <= 127 before writing.
 - **The `midi_learn_tx` oneshot** is consumed by `take()` on the first MIDI event received while active. Cancelling (`cancel_midi_learn`) simply drops the `Some(tx)`, which drops the sender; the async task waiting on `rx.await` will then return `Err(RecvError)` and exit silently.
 - **Svelte's `#each` keying** — `FaderGroupEditor` uses `(g.device + g.group)` as the `#each` key, which is string concatenation and could produce collisions (e.g., device `"a"` + group `12` == device `"a1"` + group `2`). In practice, this is unlikely to cause visible bugs given the constraint that device+group pairs must be unique in config.
 - `**color-mix(in srgb, …)`** usage in CSS requires Chromium 111+ / Safari 16.2+. Tauri's bundled WebKit on macOS supports this; on older Windows it may not render correctly.

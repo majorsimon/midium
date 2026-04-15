@@ -234,6 +234,9 @@
       await listen<MidiEvent>("midi-learn-result", (e) => {
         applyLearnedControl(e.payload);
       }),
+      await listen("preset-loaded", async () => {
+        await loadMappings();
+      }),
     );
   });
 

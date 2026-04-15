@@ -214,6 +214,9 @@
       await listen<string>("device-disconnected", (e) => {
         midiPorts = midiPorts.filter(p => p !== e.payload);
       }),
+      await listen("preset-loaded", async () => {
+        await loadGroups();
+      }),
     );
   });
 
