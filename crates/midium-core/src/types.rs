@@ -1,6 +1,73 @@
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
+// Device Profile Types
+// ---------------------------------------------------------------------------
+
+/// A device profile describes a specific MIDI controller's layout.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceProfile {
+    pub name: String,
+    #[serde(default)]
+    pub vendor: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    pub match_patterns: Vec<String>,
+    #[serde(default)]
+    pub controls: Vec<ProfileControl>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileControl {
+    pub label: String,
+    pub control_type: ProfileControlType,
+    #[serde(default)]
+    pub midi_type: MidiControlType,
+    pub channel: u8,
+    pub number: u8,
+    #[serde(default)]
+    pub min_value: u8,
+    #[serde(default = "default_max")]
+    pub max_value: u8,
+    #[serde(default)]
+    pub group: Option<u8>,
+    #[serde(default)]
+    pub button_role: Option<ButtonRole>,
+    #[serde(default)]
+    pub section: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileControlType {
+    Slider,
+    Knob,
+    Button,
+    Encoder,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MidiControlType {
+    #[default]
+    Cc,
+    Note,
+    PitchBend,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ButtonRole {
+    Solo,
+    Mute,
+    Record,
+}
+
+fn default_max() -> u8 {
+    127
+}
+
+// ---------------------------------------------------------------------------
 // MIDI Types
 // ---------------------------------------------------------------------------
 
@@ -259,6 +326,10 @@ pub enum AppEvent {
     /// Notify the GroupManager that fader group config has changed.
     GroupsChanged {
         groups: Vec<FaderGroup>,
+    },
+    /// Published when device profiles have been reloaded from disk.
+    ProfilesReloaded {
+        profiles: Vec<DeviceProfile>,
     },
     Shutdown,
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import type { AudioCapabilities, AppConfig, DeviceProfile } from "./types";
 
   let config: AppConfig | null = $state(null);
@@ -19,7 +20,16 @@
   let showImportModal = $state(false);
   let importModalType: "mappings" | "profile" = $state("mappings");
 
+  let unlistens: UnlistenFn[] = [];
+
+  onDestroy(() => unlistens.forEach(u => u()));
+
   onMount(async () => {
+    unlistens.push(
+      await listen("profiles-changed", async () => {
+        profiles = await invoke<DeviceProfile[]>("list_profiles").catch(() => [] as DeviceProfile[]);
+      }),
+    );
     [config, caps, profiles] = await Promise.all([
       invoke<AppConfig>("get_config").catch(() => null),
       invoke<AudioCapabilities>("get_capabilities").catch(() => null),
@@ -101,7 +111,7 @@
         importStatus = "✓ Mappings imported successfully.";
       } else {
         const name = await invoke<string>("import_profile", { content: importContent });
-        importStatus = `✓ Profile "${name}" imported. Restart to apply.`;
+        importStatus = `✓ Profile "${name}" imported.`;
       }
       importContent = "";
     } catch (e) {

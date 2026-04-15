@@ -5,7 +5,7 @@ mod tray;
 use std::sync::Arc;
 
 use tauri::{Emitter, Manager};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tracing::info;
 
 use midium_audio::{create_backend, SharedAudio};
@@ -16,11 +16,29 @@ use midium_core::{
     mapping::MappingEngine,
     types::{AppEvent, MidiEvent},
 };
-use midium_midi::{manager::MidiManager, profile::load_profiles, GroupManager};
+use midium_midi::{
+    manager::MidiManager,
+    profile::{bundled_profiles, merge_profiles},
+    GroupManager, ProfileWatcher,
+};
 use midium_plugins::PluginManager;
 use midium_shortcuts::ShortcutHandler;
 
 use state::AppState;
+
+/// Build the list of profile directories to search.
+fn profile_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs = vec![
+        std::path::PathBuf::from("profiles"),
+        config_dir().join("profiles"),
+    ];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            dirs.push(parent.join("profiles"));
+        }
+    }
+    dirs
+}
 
 pub(crate) fn register_toggle_shortcut(
     app: tauri::AppHandle,
@@ -68,27 +86,8 @@ pub fn run() {
             let app_config = load_config().unwrap_or_default();
             let mut mappings_config = load_mappings().unwrap_or_default();
 
-            let profiles = {
-                let mut profiles = midium_midi::profile::bundled_profiles();
-
-                let mut fs_dirs = vec![
-                    std::path::PathBuf::from("profiles"),
-                    config_dir().join("profiles"),
-                ];
-                if let Ok(exe) = std::env::current_exe() {
-                    if let Some(parent) = exe.parent() {
-                        fs_dirs.push(parent.join("profiles"));
-                    }
-                }
-                for p in fs_dirs.iter().flat_map(|d| load_profiles(d)) {
-                    if let Some(pos) = profiles.iter().position(|b| b.name == p.name) {
-                        profiles[pos] = p;
-                    } else {
-                        profiles.push(p);
-                    }
-                }
-                profiles
-            };
+            let fs_dirs = profile_dirs();
+            let profiles = merge_profiles(bundled_profiles(), &fs_dirs);
 
             let event_bus = EventBus::new();
             let audio_box = create_backend().expect("Failed to initialize audio backend");
@@ -129,7 +128,7 @@ pub fn run() {
             let plugin_list =
                 PluginManager::spawn(plugin_dirs, audio.clone(), event_bus.clone());
 
-            let profiles_arc = Arc::new(profiles);
+            let profiles_lock = Arc::new(RwLock::new(profiles));
             mappings_config.fader_groups.sort_by_key(|g| g.group);
             let initial_fader_groups = mappings_config.fader_groups.clone();
 
@@ -143,7 +142,7 @@ pub fn run() {
                 current_shortcut: Arc::new(Mutex::new(app_config.general.shortcut.clone())),
                 midi_learn_tx: midi_learn_tx.clone(),
                 plugin_list: Arc::new(Mutex::new(plugin_list)),
-                profiles: profiles_arc.clone(),
+                profiles: profiles_lock.clone(),
             });
 
             if let Some(ref shortcut_str) = app_config.general.shortcut {
@@ -175,7 +174,7 @@ pub fn run() {
             // Spawn MIDI manager
             let bus_midi = event_bus.clone();
             let poll = app_config.midi.poll_interval_secs;
-            let profiles_for_midi = (*profiles_arc).clone();
+            let profiles_for_midi = profiles_lock.blocking_read().clone();
             tauri::async_runtime::spawn(async move {
                 MidiManager::new(bus_midi, poll, profiles_for_midi)
                     .run()
@@ -185,9 +184,10 @@ pub fn run() {
             // Spawn GroupManager
             {
                 let group_audio = Box::new(SharedAudio(audio.clone()));
+                let profiles_for_groups = Arc::new(profiles_lock.blocking_read().clone());
                 let group_manager = GroupManager::new(
                     initial_fader_groups,
-                    profiles_arc.clone(),
+                    profiles_for_groups,
                     group_audio,
                     event_bus.clone(),
                 );
@@ -196,9 +196,18 @@ pub fn run() {
                 });
             }
 
+            // Spawn profile watcher
+            {
+                let watcher = ProfileWatcher::new(event_bus.clone(), fs_dirs);
+                tauri::async_runtime::spawn(async move {
+                    watcher.run().await;
+                });
+            }
+
             // EventBus -> Tauri event bridge
             let bus = event_bus.clone();
             let app_handle3 = app.handle().clone();
+            let profiles_for_bridge = profiles_lock;
             tauri::async_runtime::spawn(async move {
                 let mut rx = bus.subscribe();
                 loop {
@@ -242,6 +251,10 @@ pub fn run() {
                                 }
                             }
                         }
+                        Ok(AppEvent::ProfilesReloaded { profiles }) => {
+                            *profiles_for_bridge.write().await = profiles;
+                            let _ = app_handle3.emit("profiles-changed", ());
+                        }
                         Ok(AppEvent::Shutdown) | Err(_) => break,
                         Ok(_) => {}
                     }
@@ -276,6 +289,11 @@ pub fn run() {
             commands::config::set_autostart,
             commands::plugins::list_plugins,
             commands::profiles::list_profiles,
+            commands::profiles::list_profile_meta,
+            commands::profiles::get_profile,
+            commands::profiles::save_profile,
+            commands::profiles::delete_profile,
+            commands::profiles::duplicate_profile,
             commands::midi::send_midi,
             commands::mappings::export_mappings,
             commands::mappings::import_mappings,
@@ -284,6 +302,12 @@ pub fn run() {
             commands::fader_groups::get_fader_groups,
             commands::fader_groups::save_fader_group,
             commands::fader_groups::delete_fader_group,
+            commands::presets::list_presets,
+            commands::presets::save_preset,
+            commands::presets::load_preset,
+            commands::presets::delete_preset,
+            commands::presets::rename_preset,
+            commands::presets::get_active_preset,
         ])
         .run(tauri::generate_context!())
         .expect("error running midium");

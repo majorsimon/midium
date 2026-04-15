@@ -39,6 +39,9 @@ coreaudio-sys = "0.2"
 # Plugins
 mlua = { version = "0.10", features = ["lua54", "vendored", "serialize"] }
 
+# File watching (profile hot-reload)
+notify = "7"
+
 # Shortcuts / media keys
 enigo = "0.2"
 

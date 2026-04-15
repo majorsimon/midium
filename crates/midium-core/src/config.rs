@@ -134,6 +134,38 @@ pub fn load_config() -> anyhow::Result<AppConfig> {
     }
 }
 
+/// Path to the mapping presets directory.
+pub fn presets_dir() -> PathBuf {
+    config_dir().join("presets")
+}
+
+/// Tracks which preset is currently active.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PresetMeta {
+    #[serde(default)]
+    pub active_preset: Option<String>,
+}
+
+impl PresetMeta {
+    pub fn load() -> Self {
+        let path = config_dir().join("presets.toml");
+        if path.exists() {
+            std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|c| toml::from_str(&c).ok())
+                .unwrap_or_default()
+        } else {
+            Self::default()
+        }
+    }
+
+    pub fn save(&self) -> Result<(), String> {
+        std::fs::create_dir_all(config_dir()).map_err(|e| e.to_string())?;
+        let content = toml::to_string(self).map_err(|e| e.to_string())?;
+        std::fs::write(config_dir().join("presets.toml"), content).map_err(|e| e.to_string())
+    }
+}
+
 /// Load mappings from the config directory.
 pub fn load_mappings() -> anyhow::Result<MappingsConfig> {
     let path = config_dir().join("mappings.toml");

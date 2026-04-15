@@ -113,6 +113,12 @@ export interface DeviceProfile {
   controls: ProfileControl[];
 }
 
+export interface ProfileMeta {
+  name: string;
+  is_user: boolean;
+  control_count: number;
+}
+
 // Helper: human-readable label for a ControlId
 export function controlLabel(c: ControlId): string {
   const ct = c.control_type;

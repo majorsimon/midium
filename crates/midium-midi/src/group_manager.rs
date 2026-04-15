@@ -4,9 +4,10 @@ use tracing::{debug, trace, warn};
 
 use midium_core::dispatch::VolumeControl;
 use midium_core::event_bus::EventBus;
-use midium_core::types::{AppEvent, AudioTarget, FaderGroup, MidiEvent, MidiMessage, ValueTransform};
-
-use crate::profile::{ButtonRole, DeviceProfile, MidiControlType, ProfileControlType};
+use midium_core::types::{
+    AppEvent, AudioTarget, ButtonRole, DeviceProfile, FaderGroup, MidiControlType, MidiEvent,
+    MidiMessage, ProfileControlType, ValueTransform,
+};
 
 // ---------------------------------------------------------------------------
 // Internal resolved form of a FaderGroup
@@ -76,6 +77,10 @@ impl GroupManager {
                         .into_iter()
                         .map(|fg| resolve_group(fg, &self.profiles))
                         .collect();
+                }
+                Ok(AppEvent::ProfilesReloaded { profiles }) => {
+                    debug!(count = profiles.len(), "GroupManager: profiles updated");
+                    self.profiles = Arc::new(profiles);
                 }
                 Ok(AppEvent::Shutdown) | Err(_) => break,
                 _ => {}

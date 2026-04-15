@@ -6,10 +6,10 @@ use midir::{MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection, Se
 use tracing::{debug, error, info, warn};
 
 use midium_core::event_bus::EventBus;
-use midium_core::types::AppEvent;
+use midium_core::types::{AppEvent, DeviceProfile};
 
 use crate::parse::parse_midi;
-use crate::profile::{match_profile, DeviceProfile};
+use crate::profile::match_profile;
 
 /// Manages MIDI device discovery, connection, and event forwarding.
 pub struct MidiManager {
@@ -37,7 +37,7 @@ impl MidiManager {
     }
 
     /// Start the device polling loop. Runs until the EventBus signals Shutdown.
-    pub async fn run(self) {
+    pub async fn run(mut self) {
         let mut shutdown_rx = self.event_bus.subscribe();
         let out_conns = self.out_connections.clone();
 
@@ -72,9 +72,16 @@ impl MidiManager {
             tokio::select! {
                 _ = tokio::time::sleep(self.poll_interval) => {}
                 event = shutdown_rx.recv() => {
-                    if matches!(event, Ok(AppEvent::Shutdown) | Err(_)) {
-                        info!("MIDI manager shutting down");
-                        break;
+                    match event {
+                        Ok(AppEvent::ProfilesReloaded { profiles }) => {
+                            info!(count = profiles.len(), "MidiManager: profiles reloaded");
+                            self.profiles = Arc::new(profiles);
+                        }
+                        Ok(AppEvent::Shutdown) | Err(_) => {
+                            info!("MIDI manager shutting down");
+                            break;
+                        }
+                        _ => {}
                     }
                 }
             }
